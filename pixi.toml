@@ -61,6 +61,7 @@ contextily = "*"
 glpk = "*"
 gurobi = "*"
 rich = "*"
+highspy = "==1.13.1"
 
 [pypi-dependencies]
 currencyconverter = "*"

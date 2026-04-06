@@ -834,6 +834,12 @@ solving:
       ipm_optimality_tolerance: 1e-6
       parallel: "on"
       random_seed: 123
+    highs-hipo-default:
+      solver: "hipo"
+      run_crossover: "off"
+      threads: 1
+      parallel: "off"
+      random_seed: 123
     gurobi-default:
       threads: 4
       method: 2 # barrier
