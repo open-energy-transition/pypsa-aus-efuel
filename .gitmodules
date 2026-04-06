@@ -1,3 +1,4 @@
 [submodule "pypsa-earth"]
 	path = pypsa-earth
 	url = git@github.com:open-energy-transition/pypsa-earth.git
+	branch = project-aus-efuel
