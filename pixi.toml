@@ -61,8 +61,11 @@ contextily = "*"
 glpk = "*"
 gurobi = "*"
 rich = "*"
-highspy = "==1.13.1"
+highspy = "==1.14.0"
 
 [pypi-dependencies]
 currencyconverter = "*"
 googledrivedownloader = ">=1.1"
+
+[activation]
+scripts = ["pixi/activate.sh"]
