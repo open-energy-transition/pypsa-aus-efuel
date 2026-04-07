@@ -62,6 +62,7 @@ glpk = "*"
 gurobi = "*"
 rich = "*"
 highspy = "==1.14.0"
+openjdk = "17.*"
 
 [pypi-dependencies]
 currencyconverter = "*"
