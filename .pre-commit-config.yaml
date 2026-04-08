@@ -42,4 +42,4 @@ repos:
   rev: v1.37.1
   hooks:
   - id: yamllint
-    exclude: ^tools/|^pypsa-earth/|^configs/config\.yaml$|^\.pre-commit-config\.yaml$
+    exclude: ^tools/|^pypsa-earth/|^configs/config\.yaml$|^\.pre-commit-config\.yaml$|^\.github/workflows/
