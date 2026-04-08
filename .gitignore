@@ -40,3 +40,4 @@ results/
 resources/
 networks/
 *.nc
+node_modules/
