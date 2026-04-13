@@ -141,11 +141,12 @@ subregion:
   apply_on: ["simplify_network", "cluster_network"] # apply subregion on the simplify_network and/or cluster_network rule.
   define_by_gadm: false # name of the subregion. Multiple countries can be part in the same subregion.
   path_custom_shapes: false # provide the specific absolute path of the custom file e.g. (...\data\custom_shapes.geojson)
+  path_custom_offshore: false # (optional) provide the specific absolute path of the custom offshore file e.g. (...\data\custom_offshore.geojson)
   tolerance: 100 # Buffer distance (in km) for assigning a country/subregion shape to a bus (the default tolerance is 100 km)
 
 clean_osm_data_options: # osm = OpenStreetMap
   names_by_shapes: true # Set the country name based on the extended country shapes
-  threshold_voltage: 51000 # [V] minimum voltage threshold to keep the asset (cable, line, generator, etc.) [V]
+  threshold_voltage: 132000 # [V] minimum voltage threshold to keep the asset (cable, line, generator, etc.) [V]
   tag_substation: "transmission" # Filters only substations with 'transmission' tag, ('distribution' also available)
   add_line_endings: true # When "True", then line endings are added to the dataset of the substations
   generator_name_method: OSM # Methodology to specify the name to the generator. Options: OSM (name as by OSM dataset), closest_city (name by the closest city)
@@ -164,8 +165,8 @@ build_osm_network: # Options of the build_osm_network script; osm = OpenStreetMa
   force_ac: false # When true, it forces all components (lines and substation) to be AC-only. To be used if DC assets create problem.
 
 base_network:
-  min_voltage_substation_offshore: 51000 # [V] minimum voltage of the offshore substations
-  min_voltage_rebase_voltage: 51000 # [V] minimum voltage in base network
+  min_voltage_substation_offshore: 132000 # [V] minimum voltage of the offshore substations
+  min_voltage_rebase_voltage: 132000 # [V] minimum voltage in base network
 
 load_options:
   ssp: "ssp2-2.6" # shared socio-economic pathway (GDP and population growth) scenario to consider
@@ -189,8 +190,8 @@ co2_budget:
     2050: 0.1
 
 electricity:
-  base_voltage: 380.
-  voltages: [132., 220., 300., 330., 380., 500., 750.]
+  base_voltage: 330.
+  voltages: [132., 220., 275., 330., 500.]
   co2limit: 450e6 # 7.75e+7 # European default, 0.05 * 3.1e9*0.5, needs to be adjusted for Africa
   co2base: 620e6 # 1.487e+9 # European default, adjustment to Africa necessary
   agg_p_nom_limits: # enables to set country-wise maximum and minimum generation capacities for generators (e.g. renewables, nuclear, and geothermal)
@@ -239,10 +240,9 @@ lines:
   ac_types:
     132.: "243-AL1/39-ST1A 20.0"
     220.: "Al/St 240/40 2-bundle 220.0"
-    300.: "Al/St 240/40 3-bundle 300.0"
-    380.: "Al/St 240/40 4-bundle 380.0"
-    500.: "Al/St 240/40 4-bundle 380.0"
-    750.: "Al/St 560/50 4-bundle 750.0"
+    275.: "Al/St 240/40 3-bundle 300.0"
+    330.: "Al/St 240/40 4-bundle 380.0"
+    500.: "Al/St 560/50 4-bundle 750.0"
   dc_types:
     500.: "HVDC XLPE 1000"
   s_max_pu: 0.7
