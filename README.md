@@ -58,10 +58,10 @@ https://github.com/open-energy-transition/pypsa-earth
 
 This project follows OET’s soft fork strategy:
 
-- open-energy-transition/pypsa-earth:main  
+- open-energy-transition/pypsa-earth:main
   contains the OET soft fork, kept aligned with upstream
 
-- open-energy-transition/pypsa-earth:project-aus-efuel  
+- open-energy-transition/pypsa-earth:project-aus-efuel
   contains project-specific modifications required for this project
 
 This repository depends on the `project-aus-efuel` branch of the soft fork.
@@ -131,7 +131,7 @@ git push
 
 ## Development guidelines
 
-- Changes to the PyPSA-Earth workflow should be made in  
+- Changes to the PyPSA-Earth workflow should be made in
   open-energy-transition/pypsa-earth, on the project-aus-efuel branch.
 - Project-specific configuration, scripts, and analysis belong in this repository.
 
