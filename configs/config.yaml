@@ -190,7 +190,7 @@ co2_budget:
     2050: 0.1
 
 electricity:
-  base_voltage: 380.
+  base_voltage: 330.
   voltages: [132., 220., 275., 330., 500.]
   co2limit: 450e6 # 7.75e+7 # European default, 0.05 * 3.1e9*0.5, needs to be adjusted for Africa
   co2base: 620e6 # 1.487e+9 # European default, adjustment to Africa necessary
