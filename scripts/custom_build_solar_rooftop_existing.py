@@ -5,15 +5,64 @@
 
 import logging
 import re
+import tempfile
+import zipfile
 from pathlib import Path
 
 import geopandas as gpd
 import pandas as pd
 import pypsa
+import requests
 from _helpers import mock_snakemake
 from scipy.spatial import cKDTree
 
 logger = logging.getLogger(__name__)
+
+POA_SHAPES_URL = (
+    "https://www.abs.gov.au/statistics/standards/"
+    "australian-statistical-geography-standard-asgs-edition-3/"
+    "jul2021-jun2026/access-and-downloads/digital-boundary-files/"
+    "POA_2021_AUST_GDA2020_SHP.zip"
+)
+
+POA_SHAPES_DIR = Path("data/shapes/POA_2021_AUST_GDA2020_SHP")
+POA_SHP_FILE = POA_SHAPES_DIR / "POA_2021_AUST_GDA2020.shp"
+
+
+def ensure_poa_shapefile() -> Path:
+    """
+    Ensure the ABS POA shapefile is available locally.
+
+    Returns
+    -------
+    Path
+        Path to the POA shapefile.
+    """
+    if POA_SHP_FILE.exists():
+        logger.info("Using existing POA shapefile at %s", POA_SHP_FILE)
+        return POA_SHP_FILE
+
+    logger.info("POA shapefile not found. Downloading from ABS.")
+    POA_SHAPES_DIR.parent.mkdir(parents=True, exist_ok=True)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir = Path(tmpdir)
+        zip_path = tmpdir / "POA_2021_AUST_GDA2020_SHP.zip"
+
+        response = requests.get(POA_SHAPES_URL, timeout=120)
+        response.raise_for_status()
+        zip_path.write_bytes(response.content)
+
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            zip_ref.extractall(POA_SHAPES_DIR.parent)
+
+    if not POA_SHP_FILE.exists():
+        raise FileNotFoundError(
+            f"Expected shapefile not found after download: {POA_SHP_FILE}"
+        )
+
+    logger.info("Downloaded and extracted POA shapefile to %s", POA_SHAPES_DIR)
+    return POA_SHP_FILE
 
 
 def parse_month_column(col: str):
@@ -131,10 +180,8 @@ def load_postcode_centroids(shapefile_path: str | Path) -> pd.DataFrame:
     if postcode_col not in poa.columns:
         raise KeyError(f"Column '{postcode_col}' not found in POA shapefile.")
 
-    # Reproject to WGS84 for simple lon/lat centroid extraction.
-    poa = poa.to_crs(epsg=4326)
-
-    centroids = poa.geometry.centroid
+    # Compute centroids in the native projected CRS, then convert to WGS84.
+    centroids = gpd.GeoSeries(poa.geometry.centroid, crs=poa.crs).to_crs(epsg=4326)
 
     out = pd.DataFrame(
         {
@@ -239,8 +286,10 @@ if __name__ == "__main__":
         base_year=base_year,
     )
 
+    poa_shapefile = ensure_poa_shapefile()
+
     postcode_centroids = load_postcode_centroids(
-        shapefile_path=snakemake.input.poa_shp,
+        shapefile_path=poa_shapefile,
     )
 
     rooftop_by_node = map_postcodes_to_nearest_buses(
