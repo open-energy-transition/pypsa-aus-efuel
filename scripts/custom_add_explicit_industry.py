@@ -234,12 +234,167 @@ def add_e_ammonia(n, industrial_demand, costs, config, nhours):
     logger.info("Added e-ammonia demand.")
 
 
+def _add_methanol_store(n, methanol_buses, costs, store_suffix="methanol store"):
+    """
+    Add extendable methanol storage.
+    """
+    n.madd(
+        "Store",
+        methanol_buses.index + f" {store_suffix}",
+        bus=methanol_buses.values,
+        e_nom_extendable=True,
+        e_cyclic=True,
+        carrier=store_suffix,
+        # TODO: replace with dedicated methanol storage cost when available
+        capital_cost=0,
+        lifetime=25,
+    )
+
+
+def add_grey_methanol(n, industrial_demand, costs, config, nhours):
+    """
+    Add grey methanol explicit sector:
+    gas -> grey methanol
+    """
+    if "grey_methanol" not in industrial_demand.columns:
+        logger.info("No grey_methanol column found. Skipping grey methanol.")
+        return
+
+    nodes = industrial_demand.index
+    grey_methanol_bus = pd.Series(nodes + " grey methanol", index=nodes)
+
+    if "grey methanol" not in n.carriers.index:
+        n.add("Carrier", "grey methanol")
+
+    n.madd(
+        "Bus",
+        grey_methanol_bus.values,
+        location=nodes,
+        carrier="grey methanol",
+    )
+    logger.info("Added grey methanol buses and carrier.")
+
+    if "production_flexibility" in config.get("custom_industry", {}):
+        if "methanol" in config["custom_industry"]["production_flexibility"]:
+            _add_methanol_store(
+                n,
+                grey_methanol_bus,
+                costs,
+                store_suffix="grey methanol store",
+            )
+            logger.info("Added grey methanol stores.")
+
+    # Grey methanol: gas -> methanol
+    # TODO: replace placeholders with dedicated methanol techno-economic data
+    n.madd(
+        "Link",
+        nodes + " grey methanol synthesis",
+        bus0=nodes + " gas",
+        bus1=grey_methanol_bus.values,
+        p_nom_extendable=True,
+        carrier="grey methanol synthesis",
+        efficiency=1.0,
+        capital_cost=0,
+        marginal_cost=0,
+        lifetime=25,
+    )
+    logger.info("Added grey methanol synthesis links.")
+
+    p_set = (
+        industrial_demand.loc[nodes, "grey_methanol"].rename(
+            index=lambda x: x + " grey methanol"
+        )
+        / nhours
+    )
+
+    n.madd(
+        "Load",
+        grey_methanol_bus.values,
+        bus=grey_methanol_bus.values,
+        p_set=p_set,
+        carrier="grey methanol",
+    )
+    logger.info("Added grey methanol demand.")
+
+
+def add_e_methanol(n, industrial_demand, costs, config, nhours):
+    """
+    Add e-methanol explicit sector:
+    grid H2 + co2 stored -> e methanol
+    """
+    if "e_methanol" not in industrial_demand.columns:
+        logger.info("No e_methanol column found. Skipping e-methanol.")
+        return
+
+    nodes = industrial_demand.index
+    e_methanol_bus = pd.Series(nodes + " e methanol", index=nodes)
+    grid_h2_bus = pd.Series(nodes + " grid H2", index=nodes)
+    co2_stored_bus = pd.Series(nodes + " co2 stored", index=nodes)
+
+    if "e methanol" not in n.carriers.index:
+        n.add("Carrier", "e methanol")
+
+    n.madd(
+        "Bus",
+        e_methanol_bus.values,
+        location=nodes,
+        carrier="e methanol",
+    )
+    logger.info("Added e-methanol buses and carrier.")
+
+    if "production_flexibility" in config.get("custom_industry", {}):
+        if "methanol" in config["custom_industry"]["production_flexibility"]:
+            _add_methanol_store(
+                n,
+                e_methanol_bus,
+                costs,
+                store_suffix="e methanol store",
+            )
+            logger.info("Added e-methanol stores.")
+
+    # e-methanol: grid H2 + co2 stored -> methanol
+    # TODO: replace placeholders with dedicated e-methanol techno-economic data
+    n.madd(
+        "Link",
+        nodes + " e methanol synthesis",
+        bus0=grid_h2_bus.values,
+        bus1=e_methanol_bus.values,
+        bus2=co2_stored_bus.values,
+        p_nom_extendable=True,
+        carrier="e methanol synthesis",
+        efficiency=1.0,
+        efficiency2=-1.0,
+        capital_cost=0,
+        marginal_cost=0,
+        lifetime=25,
+    )
+    logger.info("Added e-methanol synthesis links using grid H2 and co2 stored.")
+
+    p_set = (
+        industrial_demand.loc[nodes, "e_methanol"].rename(
+            index=lambda x: x + " e methanol"
+        )
+        / nhours
+    )
+
+    n.madd(
+        "Load",
+        e_methanol_bus.values,
+        bus=e_methanol_bus.values,
+        p_set=p_set,
+        carrier="e methanol",
+    )
+    logger.info("Added e-methanol demand.")
+
+
 def add_custom_explicit_industry(n, industrial_demand, costs, config, nhours):
     """
     Add all custom explicit industry sectors currently implemented.
     """
     add_grey_ammonia(n, industrial_demand, costs, config, nhours)
     add_e_ammonia(n, industrial_demand, costs, config, nhours)
+    add_grey_methanol(n, industrial_demand, costs, config, nhours)
+    add_e_methanol(n, industrial_demand, costs, config, nhours)
     return n
 
 
