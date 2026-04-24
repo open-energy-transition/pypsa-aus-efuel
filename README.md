@@ -19,6 +19,10 @@ This project uses Pixi to manage dependencies and ensure reproducibility. The pr
 
 `pixi install`
 
+and activated through:
+
+`pixi shell`
+
 ---
 
 ## Running the model
@@ -27,18 +31,30 @@ The workflow is executed via a top-level Snakemake wrapper that delegates execut
 
 ### Run the full model (sector-coupled)
 
-`pixi run snakemake solve_sector_networks --configfile configs/config.yaml`
+Calibration year (2025):
+
+`pixi run snakemake solve_sector_networks --configfile configs/config_calibration.yaml -c1`
+
+Planning horizon 2030:
+
+`pixi run snakemake solve_sector_networks --configfile configs/config_2030.yaml -c1`
 
 ### Run power-only model
 
-`pixi run snakemake solve_all_networks --configfile configs/config.yaml`
+Calibration year (2025):
+
+`pixi run snakemake solve_all_networks --configfile configs/config_calibration.yaml -c1`
+
+Planning horizon 2030:
+
+`pixi run snakemake solve_all_networks --configfile configs/config_2030.yaml -c1`
 
 ---
 
 ## Notes
 
 - The configuration file is provided externally via:
-  configs/config.yaml
+  `configs/config_calibration.yaml` or `configs/config_2030.yaml`
 
 - The root `Snakefile` sets the working directory to the `pypsa-earth` submodule and includes its workflow, allowing execution from the repository root without modifying the submodule.
 
