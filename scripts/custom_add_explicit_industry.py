@@ -2,27 +2,22 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-import os
+import logging
 import sys
+from pathlib import Path
 
 import pandas as pd
+import pypsa
 
-sys.path.append(os.path.abspath(os.path.join(__file__, "../../")))
-sys.path.append(
-    os.path.abspath(os.path.join(__file__, "../../submodules/pypsa-earth/scripts/"))
-)
+PYPSA_EARTH_DIR = Path.cwd()
+PYPSA_EARTH_SCRIPTS_DIR = PYPSA_EARTH_DIR / "scripts"
+sys.path.append(str(PYPSA_EARTH_SCRIPTS_DIR))
 
-from _helpers import prepare_costs
+from _helpers import sanitize_carriers, sanitize_locations
+from process_cost_data import prepare_costs
 
-from scripts._helper import (
-    configure_logging,
-    create_logger,
-    load_network,
-    mock_snakemake,
-    update_config_from_wildcards,
-)
-
-logger = create_logger(__name__)
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 
 def _add_ammonia_store(n, ammonia_buses, costs, store_suffix="ammonia store"):
@@ -368,25 +363,9 @@ def add_custom_explicit_industry(n, industrial_demand, costs, config, nhours):
 
 
 if __name__ == "__main__":
-    if "snakemake" not in globals():
-        snakemake = mock_snakemake(
-            "custom_add_explicit_industry",
-            simpl="",
-            ll="v1",
-            clusters=10,
-            opts="Co2L-3h",
-            sopts="3h",
-            planning_horizons="2030",
-            discountrate="0.071",
-            demand="AB",
-            configfile="config.yaml",
-        )
+    config = snakemake.config
 
-    configure_logging(snakemake)
-
-    config = update_config_from_wildcards(snakemake.config, snakemake.wildcards)
-
-    n = load_network(snakemake.input.network)
+    n = pypsa.Network(snakemake.input.network)
 
     industrial_demand = pd.read_csv(
         snakemake.input.industrial_energy_demand_per_node,
@@ -404,9 +383,13 @@ if __name__ == "__main__":
         snakemake.params.costs["fill_values"],
         Nyears,
         snakemake.params.costs["default_exchange_rate"],
-        reference_year=snakemake.config["costs"].get("reference_year", 2020),
+        snakemake.params.costs["future_exchange_rate_strategy"],
+        snakemake.params.costs["custom_future_exchange_rate"],
     )
 
     add_custom_explicit_industry(n, industrial_demand, costs, config, nhours)
+
+    sanitize_carriers(n, snakemake.config)
+    sanitize_locations(n)
 
     n.export_to_netcdf(snakemake.output.modified_network)

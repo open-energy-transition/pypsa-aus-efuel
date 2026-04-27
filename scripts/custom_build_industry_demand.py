@@ -2,24 +2,14 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-import os
-import sys
-import warnings
+import logging
 
+import geopandas as gpd
 import pandas as pd
 
-warnings.filterwarnings("ignore")
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
-sys.path.append(os.path.abspath(os.path.join(__file__, "../../")))
-sys.path.append(
-    os.path.abspath(os.path.join(__file__, "../../submodules/pypsa-earth/scripts/"))
-)
-
-from build_industrial_distribution_key import map_industry_to_buses
-
-from scripts._helper import create_logger, mock_snakemake, update_config_from_wildcards
-
-logger = create_logger(__name__)
 
 NH3_MWH_PER_TON = 5.17
 MEOH_MWH_PER_TON = 5.54
@@ -30,6 +20,9 @@ def load_gem_data(path: str) -> pd.DataFrame:
     Load GEM plant-level data and keep only Australian ammonia/methanol plants.
     """
     df = pd.read_excel(path, sheet_name="Plant data")
+
+    df["Primary products"] = df["Primary products"].str.strip().str.lower()
+    df["Country/area"] = df["Country/area"].str.strip()
 
     df = df[
         (df["Country/area"] == "Australia")
@@ -198,11 +191,68 @@ def explode_by_carrier(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def map_industry_to_buses(df: pd.DataFrame, shapes_path: str) -> pd.DataFrame:
+    """
+    Map plant-level industry records to clustered onshore bus regions.
+    """
+    gdf = gpd.GeoDataFrame(
+        df.copy(),
+        geometry=gpd.points_from_xy(df["x"], df["y"]),
+        crs="EPSG:4326",
+    )
+
+    regions = gpd.read_file(shapes_path)
+
+    if regions.crs is None:
+        regions = regions.set_crs("EPSG:4326")
+    else:
+        regions = regions.to_crs("EPSG:4326")
+
+    mapped = gpd.sjoin(
+        gdf,
+        regions,
+        how="left",
+        predicate="within",
+    )
+
+    bus_col_candidates = ["name", "Name", "bus", "Bus", "gadm_1"]
+    bus_col = next((c for c in bus_col_candidates if c in mapped.columns), None)
+
+    if bus_col is None:
+        raise ValueError(
+            "Could not identify bus column after spatial join. "
+            f"Available columns: {list(mapped.columns)}"
+        )
+
+    mapped = mapped.rename(columns={bus_col: "bus"})
+
+    missing = mapped["bus"].isna().sum()
+    if missing > 0:
+        raise ValueError(
+            f"{missing} custom industry plants could not be mapped to bus regions."
+        )
+
+    if "country" not in mapped.columns:
+        if "country_left" in mapped.columns:
+            mapped = mapped.rename(columns={"country_left": "country"})
+        else:
+            mapped["country"] = "AU"
+
+    return pd.DataFrame(
+        mapped.drop(columns=["geometry", "index_right"], errors="ignore")
+    )
+
+
 def aggregate_by_bus(mapped_df: pd.DataFrame) -> pd.DataFrame:
     """
     Aggregate mapped plant capacities by bus and custom industry carrier.
     """
-    mapped_df = mapped_df.reset_index().rename(columns={"gadm_1": "bus"})
+    expected_columns = [
+        "grey_ammonia",
+        "e_ammonia",
+        "grey_methanol",
+        "e_methanol",
+    ]
 
     industrial_demand = (
         mapped_df.groupby(["bus", "industry", "country"])["capacity"]
@@ -220,30 +270,19 @@ def aggregate_by_bus(mapped_df: pd.DataFrame) -> pd.DataFrame:
         .fillna(0)
     )
 
-    return industrial_demand
+    for col in expected_columns:
+        if col not in industrial_demand.columns:
+            industrial_demand[col] = 0.0
+
+    return industrial_demand[["bus", "country"] + expected_columns]
 
 
 if __name__ == "__main__":
-    if "snakemake" not in globals():
-        snakemake = mock_snakemake(
-            "custom_build_industry_demand",
-            simpl="",
-            clusters="10",
-            planning_horizons="2030",
-            demand="AB",
-            configfile="config.yaml",
-        )
+    config = snakemake.config
 
-    config = update_config_from_wildcards(snakemake.config, snakemake.wildcards)
-
-    countries = snakemake.params.countries
-    gadm_layer_id = snakemake.params.gadm_layer_id
-    gadm_clustering = snakemake.params.alternative_clustering
     shapes_path = snakemake.input.shapes_path
-
     gem_path = snakemake.input.gem_data
     capacity_path = snakemake.input.capacity_data
-
     targets = config["custom_industry"]["targets_tpa"]
     e_shares = config["custom_industry"]["e_share"]
 
@@ -261,13 +300,7 @@ if __name__ == "__main__":
 
     df_expanded = explode_by_carrier(df)
 
-    mapped_df = map_industry_to_buses(
-        df_expanded,
-        countries,
-        gadm_layer_id,
-        shapes_path,
-        gadm_clustering,
-    )
+    mapped_df = map_industry_to_buses(df_expanded, shapes_path)
 
     industrial_demand = aggregate_by_bus(mapped_df)
 

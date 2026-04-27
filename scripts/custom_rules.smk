@@ -29,8 +29,8 @@ if config.get("custom_industry", {}).get("enable", False):
             gadm_layer_id=config["build_shape_options"]["gadm_layer_id"],
             alternative_clustering=config["cluster_options"]["alternative_clustering"],
         input:
-            gem_data="../data/custom/plant-level.xlsx",
-            capacity_data="../data/custom/ammonia_methanol_production.xlsx",
+            gem_data="../data/industry/Plant-level-data-Global-Chemicals-Inventory-November-2025-V1.xlsx",
+            capacity_data="../data/industry/ammonia_methanol_production_per_plant_au.xlsx",
             shapes_path="resources/" + RDIR + "bus_regions/regions_onshore_elec_s{simpl}_{clusters}.geojson",
         output:
             industrial_energy_demand_per_node=(

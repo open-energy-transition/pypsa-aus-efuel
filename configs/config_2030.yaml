@@ -810,8 +810,8 @@ solving:
     # nhours: 10
 
   solver:
-    name: highs
-    options: highs-hipo
+    name: gurobi
+    options: gurobi-default
 
   solver_options:
     highs-default:
@@ -832,6 +832,8 @@ solving:
       threads: 4
       parallel: "on"
       random_seed: 123
+      user_objective_scale: -1
+      user_bound_scale: -14
     gurobi-default:
       threads: 4
       method: 2 # barrier
