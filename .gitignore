@@ -41,3 +41,8 @@ resources/
 networks/
 *.nc
 node_modules/
+
+# Data
+notebooks/data/validation_data/*.xlsx
+data/shapes/*
+!data/shapes/README.md
