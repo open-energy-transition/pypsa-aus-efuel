@@ -351,14 +351,310 @@ def add_e_methanol(n, industrial_demand, costs, config, nhours):
     logger.info("Added e-methanol demand.")
 
 
-def add_custom_explicit_industry(n, industrial_demand, costs, config, nhours):
+def _get_base_electricity_nodes(n):
+    """
+    Return base electricity nodes where greenfield custom industry can be added.
+    """
+    if "carrier" in n.buses.columns:
+        nodes = n.buses.index[n.buses.carrier == "AC"]
+
+        if len(nodes) > 0:
+            return pd.Index(nodes)
+
+    return pd.Index(
+        [
+            bus
+            for bus in n.buses.index
+            if not any(
+                suffix in bus
+                for suffix in [
+                    " gas",
+                    " H2",
+                    " co2",
+                    "ammonia",
+                    "methanol",
+                    "battery",
+                    "heat",
+                ]
+            )
+        ]
+    )
+
+
+def _required_custom_industry_buses_exist(n, node):
+    """
+    Check whether all required input buses exist for custom industry technologies.
+    """
+    required_buses = [
+        node,
+        node + " gas",
+        node + " grey H2",
+        node + " grid H2",
+        node + " co2 stored",
+    ]
+
+    return all(bus in n.buses.index for bus in required_buses)
+
+
+def _expand_industrial_demand_for_greenfield(n, industrial_demand):
+    """
+    Add zero-demand rows for greenfield candidate nodes.
+
+    This creates candidate production links at nodes without existing baseline demand.
+    """
+    candidate_nodes = _get_base_electricity_nodes(n)
+    candidate_nodes = pd.Index(
+        [
+            node
+            for node in candidate_nodes
+            if _required_custom_industry_buses_exist(n, node)
+        ]
+    )
+
+    if candidate_nodes.empty:
+        raise ValueError(
+            "No feasible greenfield custom industry candidate nodes were found."
+        )
+
+    industrial_demand = industrial_demand.copy()
+
+    required_columns = [
+        "grey_ammonia",
+        "e_ammonia",
+        "grey_methanol",
+        "e_methanol",
+    ]
+
+    for col in required_columns:
+        if col not in industrial_demand.columns:
+            industrial_demand[col] = 0.0
+
+    missing_nodes = candidate_nodes.difference(industrial_demand.index)
+
+    if len(missing_nodes) > 0:
+        extra = pd.DataFrame(
+            0.0,
+            index=missing_nodes,
+            columns=required_columns,
+        )
+        industrial_demand = pd.concat([industrial_demand, extra], axis=0)
+
+    return industrial_demand
+
+
+def _get_brownfield_reference_carrier(growth_carrier):
+    """
+    Return the baseline carrier that defines brownfield eligibility.
+
+    Baseline is always grey, so e-fuel growth is allowed at nodes where the
+    corresponding grey product already exists.
+    """
+    mapping = {
+        "grey_ammonia": "grey_ammonia",
+        "e_ammonia": "grey_ammonia",
+        "grey_methanol": "grey_methanol",
+        "e_methanol": "grey_methanol",
+    }
+
+    if growth_carrier not in mapping:
+        raise ValueError(
+            f"Unsupported custom industry growth carrier: {growth_carrier}"
+        )
+
+    return mapping[growth_carrier]
+
+
+def _get_growth_candidate_nodes(n, industrial_demand, mode, growth_carrier=None):
+    """
+    Return candidate nodes for optimised custom industry growth.
+    """
+    if mode == "brownfield_optimised_growth":
+        if growth_carrier is None:
+            raise ValueError("growth_carrier must be provided for brownfield mode.")
+
+        reference_carrier = _get_brownfield_reference_carrier(growth_carrier)
+
+        if reference_carrier not in industrial_demand.columns:
+            raise ValueError(
+                f"Reference carrier '{reference_carrier}' not found in industrial_demand."
+            )
+
+        return pd.Index(
+            industrial_demand.index[
+                industrial_demand[reference_carrier].fillna(0.0) > 0.0
+            ]
+        )
+
+    if mode == "greenfield_optimised_growth":
+        return pd.Index(
+            [
+                node
+                for node in _get_base_electricity_nodes(n)
+                if _required_custom_industry_buses_exist(n, node)
+            ]
+        )
+
+    raise ValueError(f"Unsupported custom industry growth mode: {mode}")
+
+
+def _get_product_bus_suffix_and_carrier(growth_carrier):
+    """
+    Map growth target carrier names to product bus suffixes and network carriers.
+    """
+    mapping = {
+        "grey_ammonia": (" grey-ammonia", "grey-ammonia"),
+        "e_ammonia": (" e-ammonia", "e-ammonia"),
+        "grey_methanol": (" grey-methanol", "grey-methanol"),
+        "e_methanol": (" e-methanol", "e-methanol"),
+    }
+
+    if growth_carrier not in mapping:
+        raise ValueError(
+            f"Unsupported custom industry growth carrier: {growth_carrier}"
+        )
+
+    return mapping[growth_carrier]
+
+
+def add_custom_industry_growth_market(
+    n,
+    industrial_demand,
+    growth_targets,
+    mode,
+    nhours,
+):
+    """
+    Add aggregate growth demand through national market buses.
+
+    Candidate product buses can feed the market bus via zero-cost extendable links.
+    The optimiser then chooses the cheapest production locations.
+    """
+
+    active_growth = growth_targets[growth_targets["growth_mwh"] > 0].copy()
+
+    if active_growth.empty:
+        logger.info("No positive custom industry growth targets to add.")
+        return
+
+    for _, row in active_growth.iterrows():
+        growth_carrier = row["carrier"]
+        growth_mwh = row["growth_mwh"]
+
+        candidate_nodes = _get_growth_candidate_nodes(
+            n,
+            industrial_demand,
+            mode,
+            growth_carrier=growth_carrier,
+        )
+
+        if candidate_nodes.empty:
+            raise ValueError(
+                f"No candidate nodes found for growth carrier '{growth_carrier}' "
+                f"and mode '{mode}'."
+            )
+
+        product_suffix, product_carrier = _get_product_bus_suffix_and_carrier(
+            growth_carrier
+        )
+
+        market_bus = f"custom industry {product_carrier} growth market"
+        growth_load = f"custom industry {product_carrier} growth demand"
+
+        if market_bus not in n.buses.index:
+            n.add(
+                "Bus",
+                market_bus,
+                carrier=product_carrier,
+                location="AU",
+            )
+
+        n.add(
+            "Load",
+            growth_load,
+            bus=market_bus,
+            carrier=product_carrier,
+            p_set=growth_mwh / nhours,
+        )
+
+        product_buses = pd.Series(
+            candidate_nodes + product_suffix,
+            index=candidate_nodes,
+        )
+
+        product_buses = product_buses[product_buses.isin(n.buses.index)]
+
+        if product_buses.empty:
+            raise ValueError(
+                f"No product buses found for growth carrier '{growth_carrier}' "
+                f"and mode '{mode}'."
+            )
+
+        link_names = product_buses.index + f" {product_carrier} growth export"
+
+        n.madd(
+            "Link",
+            link_names,
+            bus0=product_buses.values,
+            bus1=market_bus,
+            carrier=f"{product_carrier} growth export",
+            p_nom_extendable=True,
+            efficiency=1.0,
+            capital_cost=0.0,
+            marginal_cost=0.0,
+        )
+
+        logger.warning(
+            f"Added custom industry growth market for {product_carrier}: "
+            f"{growth_mwh:.2f} MWh/a across {len(product_buses)} candidate nodes "
+            f"using mode={mode}."
+        )
+
+
+def add_custom_explicit_industry(
+    n,
+    industrial_demand,
+    costs,
+    config,
+    nhours,
+    growth_targets=None,
+):
     """
     Add all custom explicit industry sectors currently implemented.
     """
+    mode = (
+        config.get("custom_industry", {})
+        .get("demand_allocation", {})
+        .get("mode", "proportional_existing_capacity")
+    )
+
+    if mode == "greenfield_optimised_growth":
+        industrial_demand = _expand_industrial_demand_for_greenfield(
+            n,
+            industrial_demand,
+        )
+
     add_grey_ammonia(n, industrial_demand, costs, config, nhours)
     add_e_ammonia(n, industrial_demand, costs, config, nhours)
     add_grey_methanol(n, industrial_demand, costs, config, nhours)
     add_e_methanol(n, industrial_demand, costs, config, nhours)
+
+    if mode == "proportional_existing_capacity":
+        return n
+
+    if growth_targets is None or growth_targets.empty:
+        raise ValueError(
+            "Optimised custom industry growth mode selected, but no "
+            "growth targets were provided."
+        )
+
+    add_custom_industry_growth_market(
+        n=n,
+        industrial_demand=industrial_demand,
+        growth_targets=growth_targets,
+        mode=mode,
+        nhours=nhours,
+    )
+
     return n
 
 
@@ -372,6 +668,19 @@ if __name__ == "__main__":
         index_col=0,
     )
     industrial_demand = industrial_demand.drop(columns=["country"], errors="ignore")
+
+    growth_targets = pd.DataFrame(
+        columns=[
+            "product",
+            "carrier",
+            "growth_tpa",
+            "growth_mwh",
+            "conversion_factor_mwh_per_t",
+        ]
+    )
+
+    if hasattr(snakemake.input, "growth_targets"):
+        growth_targets = pd.read_csv(snakemake.input.growth_targets)
 
     nhours = n.snapshot_weightings.generators.sum()
     Nyears = nhours / 8760
@@ -387,7 +696,14 @@ if __name__ == "__main__":
         snakemake.params.costs["custom_future_exchange_rate"],
     )
 
-    add_custom_explicit_industry(n, industrial_demand, costs, config, nhours)
+    add_custom_explicit_industry(
+        n,
+        industrial_demand,
+        costs,
+        config,
+        nhours,
+        growth_targets,
+    )
 
     sanitize_carriers(n, snakemake.config)
     sanitize_locations(n)
