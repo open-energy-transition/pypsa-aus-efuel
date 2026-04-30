@@ -28,6 +28,9 @@ if config.get("custom_industry", {}).get("enable", False):
             countries=config["countries"],
             gadm_layer_id=config["build_shape_options"]["gadm_layer_id"],
             alternative_clustering=config["cluster_options"]["alternative_clustering"],
+            demand_allocation_mode=lambda wildcards: config["custom_industry"]["demand_allocation"]["mode"],
+            targets_tpa=lambda wildcards: str(config["custom_industry"]["targets_tpa"]),
+            e_share=lambda wildcards: str(config["custom_industry"]["e_share"]),
         input:
             gem_data="../data/industry/Plant-level-data-Global-Chemicals-Inventory-November-2025-V1.xlsx",
             capacity_data="../data/industry/ammonia_methanol_production_per_plant_au.xlsx",
@@ -42,6 +45,11 @@ if config.get("custom_industry", {}).get("enable", False):
                 "resources/"
                 + SECDIR
                 + "demand/custom_industry_plants_elec_s{simpl}_{clusters}_{planning_horizons}_{demand}.csv"
+            ),
+            growth_targets=(
+                "resources/"
+                + SECDIR
+                + "demand/custom_industry_growth_targets_elec_s{simpl}_{clusters}_{planning_horizons}_{demand}.csv"
             ),
         log:
             "logs/"
@@ -75,6 +83,11 @@ if config.get("custom_industry", {}).get("enable", False):
                 + "prenetworks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_{sopts}_{planning_horizons}_{discountrate}_{demand}.nc"
             ),
             costs="resources/" + RDIR + "costs_{planning_horizons}.csv",
+            growth_targets=(
+                "resources/"
+                + SECDIR
+                + "demand/custom_industry_growth_targets_elec_s{simpl}_{clusters}_{planning_horizons}_{demand}.csv"
+            ),
         output:
             modified_network=(
                 "results/"
@@ -94,3 +107,35 @@ if config.get("custom_industry", {}).get("enable", False):
             mem_mb=4000,
         script:
             "../scripts/custom_add_explicit_industry.py"
+
+
+if config.get("custom_hydrogen_demand", {}).get("enable", False):
+
+    rule add_custom_hydrogen_demand:
+        params:
+            annual_demand_tpa=lambda wildcards: config["custom_hydrogen_demand"]["annual_demand_tpa"],
+        input:
+            network=(
+                "results/"
+                + SECDIR
+                + "prenetworks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_{sopts}_{planning_horizons}_{discountrate}_{demand}_custom_industry.nc"
+            ),
+        output:
+            modified_network=(
+                "results/"
+                + SECDIR
+                + "prenetworks/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_{sopts}_{planning_horizons}_{discountrate}_{demand}_custom_hydrogen_demand.nc"
+            ),
+        log:
+            "logs/"
+            + SECDIR
+            + "add_custom_hydrogen_demand/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_{sopts}_{planning_horizons}_{discountrate}_{demand}.log",
+        benchmark:
+            "benchmarks/"
+            + SECDIR
+            + "add_custom_hydrogen_demand/elec_s{simpl}_{clusters}_ec_l{ll}_{opts}_{sopts}_{planning_horizons}_{discountrate}_{demand}",
+        threads: 1
+        resources:
+            mem_mb=4000,
+        script:
+            "../scripts/custom_add_hydrogen_demand.py"

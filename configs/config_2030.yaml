@@ -42,6 +42,12 @@ custom_industry:
   e_share:
     ammonia: 0.0
     methanol: 0.0
+  demand_allocation:
+    mode: proportional_existing_capacity # choose from ["proportional_existing_capacity" or "brownfield_optimised_growth" or "greenfield_optimised_growth"]
+
+custom_hydrogen_demand:
+  enable: true
+  annual_demand_tpa: 0
 
 custom_rules: # Default empty [] or link to custom rule file e.g. ["my_folder/my_rules.smk"] that add rules to Snakefile
 - "../scripts/custom_rules.smk"

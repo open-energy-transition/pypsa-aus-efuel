@@ -15,6 +15,32 @@ NH3_MWH_PER_TON = 5.17
 MEOH_MWH_PER_TON = 5.54
 
 
+VALID_DEMAND_ALLOCATION_MODES = {
+    "proportional_existing_capacity",
+    "brownfield_optimised_growth",
+    "greenfield_optimised_growth",
+}
+
+
+def get_demand_allocation_mode(config: dict) -> str:
+    """
+    Read custom industry demand allocation mode from config.
+    """
+    mode = (
+        config.get("custom_industry", {})
+        .get("demand_allocation", {})
+        .get("mode", "proportional_existing_capacity")
+    )
+
+    if mode not in VALID_DEMAND_ALLOCATION_MODES:
+        raise ValueError(
+            f"Invalid custom industry demand allocation mode '{mode}'. "
+            f"Expected one of {sorted(VALID_DEMAND_ALLOCATION_MODES)}."
+        )
+
+    return mode
+
+
 def load_gem_data(path: str) -> pd.DataFrame:
     """
     Load GEM plant-level data and keep only Australian ammonia/methanol plants.
@@ -83,44 +109,98 @@ def merge_data(gem_df: pd.DataFrame, cap_df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def allocate_and_split(df: pd.DataFrame, targets: dict, e_shares: dict) -> pd.DataFrame:
+def allocate_and_split(
+    df: pd.DataFrame,
+    targets: dict,
+    e_shares: dict,
+    mode: str,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Allocate 2030 total production targets proportionally to historical capacity,
-    then split them into grey and e- fractions according to config shares.
+    Allocate custom industry demand.
+
+    The CSV production capacity is always treated as the existing baseline.
+    The baseline is always grey.
+
+    The e_share is applied only to the demand growth, not to the baseline.
+
+    Modes:
+    - proportional_existing_capacity:
+        Growth is allocated proportionally to existing plant capacity.
+    - brownfield_optimised_growth:
+        Growth is not allocated here. It is returned as an aggregate target
+        to be optimised later on existing industry nodes.
+    - greenfield_optimised_growth:
+        Growth is not allocated here. It is returned as an aggregate target
+        to be optimised later on candidate nodes.
     """
     df = df.copy()
     df["industry"] = df["Primary products"]
-    df["total_2030_tpa"] = 0.0
+
+    growth_records = []
 
     for product, target in targets.items():
         mask = df["industry"] == product
-        total_capacity = df.loc[mask, "Production capacity (tpa)"].sum()
 
-        if total_capacity == 0:
-            raise ValueError(f"No production capacity found for product '{product}'.")
+        baseline = df.loc[mask, "Production capacity (tpa)"].fillna(0.0)
+        baseline_total = baseline.sum()
 
-        shares = df.loc[mask, "Production capacity (tpa)"] / total_capacity
-        df.loc[mask, "total_2030_tpa"] = shares * target
+        if baseline_total == 0:
+            raise ValueError(f"No baseline capacity found for product '{product}'.")
 
-        logger.info(
-            f"{product}: historical total = {total_capacity:.2f} tpa, "
-            f"2030 target = {target:.2f} tpa"
-        )
+        growth = target - baseline_total
 
-    for product in targets.keys():
+        if growth < 0:
+            raise ValueError(
+                f"Target for '{product}' ({target:.2f} tpa) is lower than "
+                f"baseline CSV capacity ({baseline_total:.2f} tpa). "
+                "Downscaling is not implemented for custom industry demand."
+            )
+
         e_share = e_shares.get(product, 0.0)
 
         if not 0 <= e_share <= 1:
             raise ValueError(f"e_share for '{product}' must be between 0 and 1.")
 
-        mask = df["industry"] == product
+        df.loc[mask, f"e_{product}_tpa"] = 0.0
+        df.loc[mask, f"grey_{product}_tpa"] = baseline
 
-        df.loc[mask, f"e_{product}_tpa"] = df.loc[mask, "total_2030_tpa"] * e_share
-        df.loc[mask, f"grey_{product}_tpa"] = df.loc[mask, "total_2030_tpa"] * (
-            1 - e_share
+        if mode == "proportional_existing_capacity":
+            shares = baseline / baseline_total
+
+            allocated_e_growth = shares * growth * e_share
+            allocated_grey_growth = shares * growth * (1 - e_share)
+
+            df.loc[mask, f"e_{product}_tpa"] += allocated_e_growth
+            df.loc[mask, f"grey_{product}_tpa"] += allocated_grey_growth
+
+            growth_for_model = 0.0
+        else:
+            growth_for_model = growth
+
+        growth_records.extend(
+            [
+                {
+                    "product": product,
+                    "carrier": f"e_{product}",
+                    "growth_tpa": growth_for_model * e_share,
+                },
+                {
+                    "product": product,
+                    "carrier": f"grey_{product}",
+                    "growth_tpa": growth_for_model * (1 - e_share),
+                },
+            ]
         )
 
-    return df
+        logger.info(
+            f"{product}: baseline = {baseline_total:.2f} tpa, "
+            f"target = {target:.2f} tpa, growth = {growth:.2f} tpa, "
+            f"e_share_on_growth = {e_share:.2f}, mode = {mode}"
+        )
+
+    growth_targets = pd.DataFrame(growth_records)
+
+    return df, growth_targets
 
 
 def convert_to_mwh(df: pd.DataFrame) -> pd.DataFrame:
@@ -136,6 +216,42 @@ def convert_to_mwh(df: pd.DataFrame) -> pd.DataFrame:
     df["grey_methanol"] = df.get("grey_methanol_tpa", 0.0) * MEOH_MWH_PER_TON
 
     return df
+
+
+def convert_growth_targets_to_mwh(growth_targets: pd.DataFrame) -> pd.DataFrame:
+    """
+    Convert aggregate growth targets from tpa to MWh/a.
+    """
+    growth_targets = growth_targets.copy()
+
+    factors = {
+        "ammonia": NH3_MWH_PER_TON,
+        "methanol": MEOH_MWH_PER_TON,
+    }
+
+    growth_targets["conversion_factor_mwh_per_t"] = growth_targets["product"].map(
+        factors
+    )
+
+    if growth_targets["conversion_factor_mwh_per_t"].isna().any():
+        missing = growth_targets.loc[
+            growth_targets["conversion_factor_mwh_per_t"].isna(), "product"
+        ].unique()
+        raise ValueError(f"Missing conversion factors for products: {missing}")
+
+    growth_targets["growth_mwh"] = (
+        growth_targets["growth_tpa"] * growth_targets["conversion_factor_mwh_per_t"]
+    )
+
+    return growth_targets[
+        [
+            "product",
+            "carrier",
+            "growth_tpa",
+            "growth_mwh",
+            "conversion_factor_mwh_per_t",
+        ]
+    ]
 
 
 def prepare_mapping(df: pd.DataFrame) -> pd.DataFrame:
@@ -290,13 +406,31 @@ if __name__ == "__main__":
     cap_df = load_capacity_data(capacity_path)
 
     df = merge_data(gem_df, cap_df)
-    df = allocate_and_split(df, targets, e_shares)
+
+    mode = get_demand_allocation_mode(config)
+
+    df, growth_targets = allocate_and_split(
+        df,
+        targets,
+        e_shares,
+        mode,
+    )
+
     df = convert_to_mwh(df)
+    growth_targets = convert_growth_targets_to_mwh(growth_targets)
+
     df = prepare_mapping(df)
 
     if hasattr(snakemake.output, "plants"):
         df.to_csv(snakemake.output.plants, index=False)
         logger.info("Saved merged plant-level custom industry dataset.")
+
+    if hasattr(snakemake.output, "growth_targets"):
+        logger.warning(
+            f"Writing growth_targets to {snakemake.output.growth_targets} | "
+            f"mode={mode} | targets={targets} | e_share={e_shares}"
+        )
+        growth_targets.to_csv(snakemake.output.growth_targets, index=False)
 
     df_expanded = explode_by_carrier(df)
 

@@ -1,6 +1,6 @@
 [workspace]
 authors = ["Markus Groissböck <markus.groissboeck@gmx.at>"]
-channels = ["conda-forge", "bioconda", "gurobi"]
+channels = ["conda-forge", "bioconda", "gurobi", "conda-forge/label/dev"]
 name = "pypsa-earth"
 platforms = ["linux-64"]
 version = "0.1.0"
@@ -61,7 +61,7 @@ contextily = "*"
 glpk = "*"
 gurobi = "*"
 rich = "*"
-highspy = "==1.14.0"
+highspy = { version = ">=1.13.2.dev0", channel = "conda-forge/label/dev" }
 openjdk = "17.*"
 
 [pypi-dependencies]
