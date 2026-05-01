@@ -488,22 +488,19 @@ if t_demand.open:
                     elif l in MWH_PER_TONNE:
                         available_loads = loads.intersection(n.loads_t.p.columns)
 
-                        if len(available_loads) > 0:
+                        if len(available_loads) == 0:
+                            old_multiplier[l] = 0.0
+                        else:
                             annual_mwh = (
                                 n.loads_t.p[available_loads]
                                 .multiply(n.snapshot_weightings.generators, axis=0)
                                 .sum()
                                 .sum()
                             )
-                        else:
-                            annual_mwh = (
-                                n.loads.loc[loads, "p_set"].sum()
-                                * n.snapshot_weightings.generators.sum()
-                            )
-                        old_multiplier[l] = annual_mwh / MWH_PER_TONNE[l] / 1e6
+                            old_multiplier[l] = annual_mwh / MWH_PER_TONNE[l] / 1e6
                     else:
                         old_multiplier[l] = 0.0
-                #
+
                 col1, col2, col3, col4 = st.columns(4, vertical_alignment="top")
                 with col2:
                     st.write("**Old Demand**")
@@ -511,7 +508,7 @@ if t_demand.open:
                     st.write("**Proposed Demand**")
                 with col4:
                     st.write("**Proposed Price / Tonne**")
-                #
+
                 for l in load_data:
                     col1, col2, col3, col4 = st.columns(4, vertical_alignment="top")
                     with col1:
