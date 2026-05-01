@@ -41,7 +41,7 @@ def investment_cost(
 default_dr = 7.0
 default_om = 3.0  # %
 # "lt": lifetime; "cc": capital_cost; "mc": marginal_cost; "dr": discount_rate; "label": label for UI
-tech_data: dict[str, dict[str, int | str]] = {
+tech_data: dict[str, dict[str, int | float | str]] = {
     "solar rooftop": {
         "lt": 40,
         "cc": investment_cost(153711.113765, 0.044, 35),
