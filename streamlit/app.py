@@ -92,12 +92,59 @@ tech_data: dict[str, dict[str, int | float | str]] = {
     },
 }
 
-load_data: dict[str, dict[str, int | float | str]] = {
-    #    "electricity": {"multiplier": 1, "label": "Electricity"},
-    "diesel": {"multiplier": 0, "label": "Diesel", "cost": 2500},
-    "e-hydrogen": {"multiplier": 1, "label": "eHydrogen", "cost": 2000},
-    "e-ammonia": {"multiplier": 1, "label": "eAmmonia", "cost": 700},
-    "e-methanol": {"multiplier": 1, "label": "eMethanol", "cost": 700},
+MWH_PER_TONNE: dict[str, float] = {
+    "diesel": 11.9,
+    "custom_h2": 33.0,
+    "grey_ammonia": 5.17,
+    "e_ammonia": 5.17,
+    "grey_methanol": 5.54,
+    "e_methanol": 5.54,
+}
+
+# TODO: Diesel is currently only an external counterfactual cost parameter because the current model configuration has no diesel load carrier.
+load_data: dict[str, dict[str, int | float | str | list[str]]] = {
+    "diesel": {
+        "multiplier": 0,
+        "label": "Diesel",
+        "cost": 2500,
+        "carriers": [],
+        "loads": [],
+    },
+    "custom_h2": {
+        "multiplier": 1,
+        "label": "Hydrogen",
+        "cost": 2000,
+        "carriers": [],
+        "loads": ["custom H2 demand"],
+    },
+    "grey_ammonia": {
+        "multiplier": 1,
+        "label": "Grey ammonia",
+        "cost": 700,
+        "carriers": ["grey-ammonia"],
+        "loads": [],
+    },
+    "e_ammonia": {
+        "multiplier": 1,
+        "label": "e-ammonia",
+        "cost": 700,
+        "carriers": ["e-ammonia"],
+        "loads": [],
+    },
+    "grey_methanol": {
+        "multiplier": 1,
+        "label": "Grey methanol",
+        "cost": 700,
+        "carriers": ["grey-methanol"],
+        "loads": [],
+    },
+    "e_methanol": {
+        "multiplier": 1,
+        "label": "e-methanol",
+        "cost": 700,
+        "carriers": ["e-methanol"],
+        "loads": [],
+    },
 }
 
 
@@ -122,6 +169,25 @@ def replace_nan(x: float, def_value: int = 0):
 
 def round_multiple(number: float, multiple: float = 50.0):
     return float(multiple * round(number / multiple))
+
+
+def get_loads_for_demand_entry(
+    network: pypsa.Network,
+    carriers: list[str],
+    loads: list[str],
+) -> pd.Index:
+    """Return loads matching explicit load names or exact carrier names."""
+    selected = pd.Index([])
+
+    if loads:
+        selected = selected.union(pd.Index(loads).intersection(network.loads.index))
+
+    if carriers:
+        selected = selected.union(
+            network.loads.index[network.loads.carrier.isin(carriers)]
+        )
+
+    return selected
 
 
 def to_fraction_discount_rate(discount_rate: float) -> float:
@@ -411,11 +477,32 @@ if t_demand.open:
                 # collect the current demand
                 for l in load_data:
                     # get the loads associated with the current load, e.g., e-ammonia
-                    loads = n.loads[n.loads.carrier.str.contains(l)].index
+                    loads = get_loads_for_demand_entry(
+                        n,
+                        carriers=load_data[l]["carriers"],
+                        loads=load_data[l]["loads"],
+                    )
                     # calculate the sum of the loads collected
-                    old_multiplier[l] = (
-                        n.loads_t.p[loads].sum().sum() / 1e6
-                    )  # convert to MTPA
+                    if len(loads) == 0:
+                        old_multiplier[l] = 0.0
+                    elif l in MWH_PER_TONNE:
+                        available_loads = loads.intersection(n.loads_t.p.columns)
+
+                        if len(available_loads) > 0:
+                            annual_mwh = (
+                                n.loads_t.p[available_loads]
+                                .multiply(n.snapshot_weightings.generators, axis=0)
+                                .sum()
+                                .sum()
+                            )
+                        else:
+                            annual_mwh = (
+                                n.loads.loc[loads, "p_set"].sum()
+                                * n.snapshot_weightings.generators.sum()
+                            )
+                        old_multiplier[l] = annual_mwh / MWH_PER_TONNE[l] / 1e6
+                    else:
+                        old_multiplier[l] = 0.0
                 #
                 col1, col2, col3, col4 = st.columns(4, vertical_alignment="top")
                 with col2:
@@ -465,35 +552,35 @@ if t_demand.open:
             if st.button("Apply New Demand"):
                 name_loads = []
                 for l in load_data:
-                    if l != "diesel":
-                        nr_loads = len(n.loads.index[n.loads.carrier.str.contains(l)])
-                        for load in n.loads.index[n.loads.carrier.str.contains(l)]:
-                            # update the recent load with the adjusted load
-                            if old_multiplier[l] > 0:
-                                n.loads.loc[load, "p_set"] = (
-                                    new_multiplier[l]
-                                    * 1e6
-                                    / 8760
-                                    / old_multiplier[l]
-                                    / nr_loads
-                                )
-                            else:
-                                n.loads.loc[load, "p_set"] = (
-                                    new_multiplier[l] * 1e6 / 8760 / nr_loads
-                                )
-                            n.loads_t.p[load] = n.loads.loc[load, "p_set"]
-                            # save the name of the load for later use
-                            name_loads.append(load)
+                    if l == "diesel":
+                        continue
+
+                    loads = get_loads_for_demand_entry(
+                        n,
+                        carriers=load_data[l]["carriers"],
+                        loads=load_data[l]["loads"],
+                    )
+                    nr_loads = len(loads)
+
+                    if nr_loads == 0:
+                        continue
+
+                    if l not in MWH_PER_TONNE:
+                        continue
+
+                    annual_mwh = new_multiplier[l] * 1e6 * MWH_PER_TONNE[l]
+                    new_p_set = (
+                        annual_mwh / n.snapshot_weightings.generators.sum() / nr_loads
+                    )
+
+                    for load in loads:
+                        n.loads.loc[load, "p_set"] = new_p_set
+                        n.loads_t.p[load] = new_p_set
+                        name_loads.append(load)
 
                 st.success("Updated details for mentioned carriers ...")
                 df = n.loads[["carrier", "p_set"]]
-                st.dataframe(
-                    df[
-                        df[["carrier", "p_set"]]
-                        .index.str.lower()
-                        .isin([n.lower() for n in name_loads])
-                    ]
-                )
+                st.dataframe(df[df.index.isin(name_loads)])
 
 # --- TAB OPTIMIZATION
 if t_optimization.open:
@@ -589,22 +676,40 @@ if t_optimization.open:
                     st.bar_chart(dispatch, y_label="MW")
                     # calculate the annual costs for importing e-fuels otherwise
                     new_cost = st.session_state.new_cost
-                    avoided_import_cost = 0
-                    for l in load_data:
-                        if l != "diesel":
+                    new_multiplier = st.session_state.new_multiplier
+
+                    if new_cost is None or new_multiplier is None:
+                        st.warning(
+                            "Demand parameters were not applied. Import-cost comparison is skipped."
+                        )
+                        avoided_import_cost = None
+                    else:
+                        avoided_import_cost = 0
+                        for l in load_data:
+                            if l == "diesel":
+                                continue
+
+                            loads = get_loads_for_demand_entry(
+                                n2,
+                                carriers=load_data[l]["carriers"],
+                                loads=load_data[l]["loads"],
+                            )
+
+                            if len(loads) == 0:
+                                continue
+
                             avoided_import_cost += new_multiplier[l] * new_cost[l] * 1e6
-                    #
-                    old_total_cost = avoided_import_cost
-                    new_total_cost = n2.objective
+                    optimized_system_cost = n2.objective
                     expanded_cap = n2.statistics.expanded_capacity().round(1)
-                    #
-                    # expanded_cap[('Economics', 'Old Annuity')] = round(old_total_cost / 1e6, 1) # convert to million AUD
+
                     expanded_cap[("Economics", "New Annuity")] = round(
-                        n2.objective / 1e6, 1
-                    )  # convert to million AUD
-                    expanded_cap[("Economics", "Savings")] = round(
-                        (old_total_cost - new_total_cost) / 1e6, 1
-                    )  # convert to million AUD
+                        optimized_system_cost / 1e6, 1
+                    )  # million AUD
+
+                    if avoided_import_cost is not None:
+                        expanded_cap[("Economics", "Savings")] = round(
+                            (avoided_import_cost - optimized_system_cost) / 1e6, 1
+                        )  # million AUD
                     #
                     if st.session_state.results is None:
                         cap_df = expanded_cap.to_frame(
