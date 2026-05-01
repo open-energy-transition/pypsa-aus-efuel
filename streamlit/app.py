@@ -538,7 +538,7 @@ if t_optimization.open:
 
                 if run_mode == "Week per Month":
                     start_day = (weeks - 1) * 7 + 1
-                    end_day = start_day + 6
+                    end_day = start_day + 7
                     months = months  # [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
                 else:
                     start_day = 1
