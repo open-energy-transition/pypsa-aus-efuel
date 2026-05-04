@@ -1,5 +1,5 @@
 matplotlib
 numpy
 pandas
-pypsa
+pypsa==0.30.3
 streamlit
