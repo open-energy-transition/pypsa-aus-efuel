@@ -670,6 +670,7 @@ if t_optimization.open:
                 st.session_state.opt_runs += 1
                 with st.spinner("Solving Network ..."):
                     n2.consistency_check()
+                    n2.sanitize()
                     status, condition = n2.optimize(
                         solver_name=solver_name,
                         assign_all_duals=False,
