@@ -1,7 +1,7 @@
-matplotlib==3.10.8
-numpy==1.26.4
-pandas==2.3.3
-highspy==1.14.0
-linopy==0.6.6
-pypsa==0.30.3
-streamlit==1.57.0
+matplotlib
+numpy
+pandas
+highspy
+linopy
+pypsa
+streamlit
