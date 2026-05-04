@@ -12,7 +12,6 @@ import os
 import tempfile
 from importlib.metadata import version
 
-import cartopy.crs as ccrs
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -219,7 +218,7 @@ st.write("Walk through the tabs below from left to the right ...")
 with st.expander("Disclaimer", expanded=False):
     st.write(
         """
-        The content of this document/web page is intended for the exclusive use of Open Energy Transition's client and other contractually agreed recipients. It may only be made available in whole or in part to third parties with the client’s consent and on a non-reliance basis. OET is not liable to third parties for the completeness and accuracy of the information provided therein.
+        The content of this document/web page is intended for the exclusive use of **Open Energy Transition**'s client and other contractually agreed recipients. It may only be made available in whole or in part to third parties with the client’s consent and on a non-reliance basis. **Open Energy Transition** is not liable to third parties for the completeness and accuracy of the information provided therein.
         """
     )
 
@@ -284,7 +283,7 @@ with st.sidebar:
         pkg_version = version(pkg)
         pkgs[pkg] = pkg_version
 
-    df = pd.DataFrame.from_dict(pkgs, orient="index", columns=["Version"])
+    df = pd.DataFrame.from_dict(pkgs, orient="index", columns=["Installed Versions"])
     st.dataframe(df)
 
 # --- Tabs
@@ -299,7 +298,7 @@ t_welcome, t_economic, t_demand, t_optimization, t_results = st.tabs(
     tabs, on_change="rerun"
 )
 
-# --- TAB WeLCOME
+# --- TAB WELCOME
 if t_welcome.open:
     with t_welcome:
         st.subheader("Welcome to the PyPSA-AUS-eFuels Interactive Manager!")
@@ -309,21 +308,21 @@ if t_welcome.open:
 
             Use the sidebar to load your network and set project targets. Then, navigate through the tabs to manage different aspects of your project.
 
-            This application has been developed during a project between **Open Energy Transition (OET)** and **Sagax Capital / Keshik Capital** to assess the impact on Australia on local Ammonia and Methanol production.
+            This application has been developed during a project between **Open Energy Transition** and **Sagax Capital / Keshik Capital** to assess the impact on Australia on local Ammonia and Methanol production.
 
-            In 2025, Australia's Diesel consumption was about 32 bn liter or 27.2 MTPA (million ton per annum). About 85% (or more than 23 MTPA) needed to be imported. Assuming AUD 3/liter, this makes more than AUD ~80 bn of import costs for Diesel alone, every year with a growth rate of 5-10%/year.
+            In 2025, Australia's **Diesel** consumption was about 32 bn liter or 27.2 MTPA (million ton per annum). About 85% (or more than 23 MTPA) needed to be imported. Assuming AUD 3/liter, this makes more than AUD ~80 bn of import costs every year. A historical growth rate of 5-10%/year has been observed and is expected going forward.
+            **Ammonia** consumption was about 2 MTPA, where about 50% was used in agriculture, 35% in mining and explosives, and the rest in industry and chemicals.
+            While short distance truck transport and a significant share of mining might be replaced by electric vehicles, long distance transport via truck and train likely still rely on liquid fuels for the foreseeable future.
 
-            Ammonia consumption was about 2 MTPA, where about 50% was used in agriculture, 35% in mining and explosives, and the rest in industry and chemicals.
-
-            The project aims to evaluate the potential for local production of these chemicals using renewable energy sources, and how this does help Australia in its energy transition and resilience.
-
-            **The entire project source is available on GitHub: https://github.com/open-energy-transition/pypsa-aus-efuel.**
+            **A diesel replacement by methanol of e.g., 10% (~2.3 MTPA) would save AUD ~8 bn per year in import costs, which could be used to invest in local production, local renewable energy and local employment instead.**
             """
         )
         with st.expander("Project Description", expanded=False):
             st.write(
                 """
-                **tbd.**
+                The project aims to evaluate the potential for local production of these chemicals using renewable energy sources, and how this does help Australia in its energy transition and resilience.
+
+                **The entire project source is available on GitHub: https://github.com/open-energy-transition/pypsa-aus-efuel.**
                 """
             )
 
@@ -378,7 +377,7 @@ if t_economic.open:
                 with col2:
                     st.write("**Discount Rate (%)**")
                 with col3:
-                    st.write("**Capital Cost (AUD/MW)**")
+                    st.write("**Overnight Investment Cost (AUD/MW)**")
                 with col4:
                     st.write("**Marginal Cost (AUD/MWh)**")
 
@@ -401,7 +400,7 @@ if t_economic.open:
                             label=f"cc_{tech_data[d]['label']}",
                             label_visibility="collapsed",
                             min_value=1.0,
-                            max_value=20_000_000.0,
+                            max_value=10_000_000.0,
                             value=investment_cost(old_cc[d], new_dr[d], old_lt[d]),
                             step=0.1,
                             format="%,.1f AUD/MW",
@@ -445,6 +444,9 @@ if t_economic.open:
 
                 st.success("Updated details for mentioned technologies ...")
                 st.write(
+                    "Remark: in this table the column capital_cost refersto annuity plus fixed O&M costs."
+                )
+                st.write(
                     g[
                         [
                             "capital_cost",
@@ -473,7 +475,6 @@ if t_demand.open:
                 st.write("Choose Load Multipliers to be used for your case:")
                 old_multiplier = {}
                 new_multiplier = {}
-                new_cost = {}
                 # collect the current demand
                 for l in load_data:
                     # get the loads associated with the current load, e.g., e-ammonia
@@ -482,6 +483,7 @@ if t_demand.open:
                         carriers=load_data[l]["carriers"],
                         loads=load_data[l]["loads"],
                     )
+
                     # calculate the sum of the loads collected
                     if len(loads) == 0:
                         old_multiplier[l] = 0.0
@@ -501,13 +503,23 @@ if t_demand.open:
                     else:
                         old_multiplier[l] = 0.0
 
+                if st.session_state.new_cost is None:
+                    new_cost = {}
+                    for l in load_data:
+                        # get the current avoided price assumptions
+                        new_cost[l] = load_data[l]["cost"]
+
+                    st.session_state.new_cost = new_cost
+                else:
+                    new_cost = st.session_state.new_cost
+
                 col1, col2, col3, col4 = st.columns(4, vertical_alignment="top")
                 with col2:
-                    st.write("**Old Demand**")
+                    st.write("**Current Demand**")
                 with col3:
-                    st.write("**Proposed Demand**")
+                    st.write("**New / Proposed Demand**")
                 with col4:
-                    st.write("**Proposed Price / Tonne**")
+                    st.write("**Avoided Import Price / Tonne**")
 
                 for l in load_data:
                     col1, col2, col3, col4 = st.columns(4, vertical_alignment="top")
@@ -532,14 +544,15 @@ if t_demand.open:
                             label=f"Cost {l}",
                             label_visibility="collapsed",
                             min_value=0.0,
-                            max_value=5000.0,
+                            max_value=10_000.0,
                             step=0.1,
-                            value=round_multiple(load_data[l]["cost"], 0.1),
+                            value=round_multiple(new_cost[l], 0.1),
                             format="%.1f AUD/Tonne",
                         )
                         if l == "diesel":
-                            st.write(f"Equals AUD ~{new_cost[l]/0.85/1000:.2f}/liter")
-                            st.write("")
+                            st.write(
+                                f"... equals ~{new_cost[l]/0.85/1000:.2f} AUD/liter"
+                            )
                             st.write("")
 
                 st.session_state.old_multiplier = old_multiplier
@@ -577,7 +590,7 @@ if t_demand.open:
 
                 st.success("Updated details for mentioned carriers ...")
                 df = n.loads[["carrier", "p_set"]]
-                st.dataframe(df[df.index.isin(name_loads)])
+                st.dataframe(df[df.index.isin(name_loads)], height=500)
 
 # --- TAB OPTIMIZATION
 if t_optimization.open:
@@ -593,6 +606,9 @@ if t_optimization.open:
             n = st.session_state.n
             old_multiplier = st.session_state.old_multiplier
             new_multiplier = st.session_state.new_multiplier
+            new_cost = st.session_state.new_cost
+            new_multiplier = st.session_state.new_multiplier
+
             st.header("Run Optimization")
             with st.expander("Snapshot Options", expanded=True):
                 col1, col2, col3 = st.columns(3, vertical_alignment="top")
@@ -656,7 +672,7 @@ if t_optimization.open:
                     n2.consistency_check()
                     status, condition = n2.optimize(
                         solver_name=solver_name,
-                        assign_all_duals=True,
+                        assign_all_duals=False,
                         include_objective_constant=False,
                         solver_options={
                             "user_objective_scale": -2,
@@ -672,9 +688,6 @@ if t_optimization.open:
                     dispatch = n2.generators_t.p  # .sum()
                     st.bar_chart(dispatch, y_label="MW")
                     # calculate the annual costs for importing e-fuels otherwise
-                    new_cost = st.session_state.new_cost
-                    new_multiplier = st.session_state.new_multiplier
-
                     if new_cost is None or new_multiplier is None:
                         st.warning(
                             "Demand parameters were not applied. Import-cost comparison is skipped."
@@ -696,6 +709,7 @@ if t_optimization.open:
                                 continue
 
                             avoided_import_cost += new_multiplier[l] * new_cost[l] * 1e6
+
                     optimized_system_cost = n2.objective
                     expanded_cap = n2.statistics.expanded_capacity().round(1)
 
@@ -742,11 +756,12 @@ if t_results.open:
             df = st.session_state.results
             # don't show economic details in the technical comparison
             df = df[~df.index.get_level_values(0).str.contains("Economics")]
+            df = df[df.index.get_level_values(0).str.contains("Link")]
             # only show rows where there is a difference in the values across runs
             df = df[df.nunique(axis=1) > 1]
             st.dataframe(df.T.style.format("{:.1f}"))
-            st.header("Economic Comparison")
             #
+            st.header("Economic Comparison")
             df = st.session_state.results
             df = df / 1e3  # convert to million AUD
             # only show economic details
