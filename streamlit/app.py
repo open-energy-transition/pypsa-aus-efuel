@@ -491,19 +491,25 @@ if t_demand.open:
                     # calculate the sum of the loads collected
                     if len(loads) == 0:
                         old_multiplier[l] = 0.0
+
                     elif l in MWH_PER_TONNE:
                         available_loads = loads.intersection(n.loads_t.p.columns)
 
-                        if len(available_loads) == 0:
-                            old_multiplier[l] = 0.0
-                        else:
+                        if len(available_loads) > 0:
                             annual_mwh = (
                                 n.loads_t.p[available_loads]
                                 .multiply(n.snapshot_weightings.generators, axis=0)
                                 .sum()
                                 .sum()
                             )
-                            old_multiplier[l] = annual_mwh / MWH_PER_TONNE[l] / 1e6
+                        else:
+                            annual_mwh = (
+                                n.loads.loc[loads, "p_set"].sum()
+                                * n.snapshot_weightings.generators.sum()
+                            )
+
+                        old_multiplier[l] = annual_mwh / MWH_PER_TONNE[l] / 1e6
+
                     else:
                         old_multiplier[l] = 0.0
 
