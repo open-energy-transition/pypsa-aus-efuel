@@ -444,10 +444,13 @@ if t_economic.open:
                 )
                 old_lt = {}
                 old_dr = {}
+                old_ui_dr = {}
                 new_dr = {}
                 old_cc = {}
+                old_ui_cc = {}
                 new_cc = {}
                 old_mc = {}
+                old_ui_mc = {}
                 new_mc = {}
                 # Discount rates are stored in the PyPSA network as fractions
                 # (e.g. 0.07 for 7%), while the Streamlit UI displays percentages.
@@ -483,12 +486,14 @@ if t_economic.open:
                     with col1:
                         st.write(f"**{tech_data[d]['label']}**")
                     with col2:
+                        old_ui_dr[d] = round_multiple(old_dr[d], 0.1)
+
                         new_dr[d] = st.slider(
                             label=f"dr_{tech_data[d]['label']}",
                             label_visibility="collapsed",
                             min_value=0.1,
                             max_value=20.0,
-                            value=round_multiple(old_dr[d], 0.1),
+                            value=old_ui_dr[d],
                             step=0.1,
                             format="%.1f%%",
                         )
@@ -496,23 +501,26 @@ if t_economic.open:
                         initial_cc = investment_cost(old_cc[d], new_dr[d], old_lt[d])
                         st.session_state.setdefault(f"initial_cc_{d}", initial_cc)
 
+                        old_ui_cc[d] = investment_cost(old_cc[d], new_dr[d], old_lt[d])
+
                         new_cc[d] = st.slider(
                             label=f"cc_{tech_data[d]['label']}",
                             label_visibility="collapsed",
                             min_value=1.0,
                             max_value=10_000_000.0,
-                            value=initial_cc,
+                            value=old_ui_cc[d],
                             step=0.1,
                             format="%,.1f AUD/MW",
-                            key=f"cc_{d}",
                         )
                     with col4:
+                        old_ui_mc[d] = round_multiple(old_mc[d], 0.1)
+
                         new_mc[d] = st.slider(
                             label=f"mc_{tech_data[d]['label']}",
                             label_visibility="collapsed",
                             min_value=0.0,
                             max_value=20.0,
-                            value=round_multiple(old_mc[d], 0.1),
+                            value=old_ui_mc[d],
                             step=0.1,
                             format="%.1f AUD/MWh",
                         )
@@ -544,11 +552,9 @@ if t_economic.open:
                         )
 
                 st.session_state.costs_modified = any(
-                    not np.isclose(new_dr[d], old_dr[d])
-                    or not np.isclose(
-                        new_cc[d], st.session_state.get(f"initial_cc_{d}", new_cc[d])
-                    )
-                    or not np.isclose(new_mc[d], old_mc[d])
+                    not np.isclose(new_dr[d], old_ui_dr[d])
+                    or not np.isclose(new_cc[d], old_ui_cc[d])
+                    or not np.isclose(new_mc[d], old_ui_mc[d])
                     for d in tech_data
                 )
                 st.success("Updated details for mentioned technologies ...")
