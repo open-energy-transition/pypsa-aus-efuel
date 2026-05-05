@@ -237,10 +237,11 @@ def build_scenario_id(
     year: int = 2030,
     clusters: int = 10,
     resolution: str = "3h",
-    cost_tag: str = "costCustom",
 ) -> str:
     """Build a deterministic scenario ID from current UI settings."""
     demand = get_current_demand_values()
+
+    cost_tag = "costCustom" if st.session_state.get("costs_modified") else "costRef"
 
     ammonia = demand["grey_ammonia"] + demand["e_ammonia"]
     methanol = demand["grey_methanol"] + demand["e_methanol"]
@@ -264,10 +265,13 @@ def build_scenario_summary(
     year: int = 2030,
     clusters: int = 10,
     resolution: str = "3h",
-    cost_label: str = "Custom technology costs",
 ) -> str:
     """Build a human-readable scenario summary."""
     demand = get_current_demand_values()
+
+    cost_label = (
+        "Custom costs" if st.session_state.get("costs_modified") else "Reference costs"
+    )
 
     ammonia = demand["grey_ammonia"] + demand["e_ammonia"]
     methanol = demand["grey_methanol"] + demand["e_methanol"]
@@ -315,6 +319,8 @@ if "new_cost" not in st.session_state:
     st.session_state.new_cost = None
 if "PYPSA_VERSION" not in st.session_state:
     st.session_state.PYPSA_VERSION = None
+if "costs_modified" not in st.session_state:
+    st.session_state.costs_modified = False
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -339,6 +345,7 @@ with st.sidebar:
             else:
                 g["discount_rate"] = g["discount_rate"].apply(to_fraction_discount_rate)
             st.session_state.n = n
+            st.session_state.costs_modified = False
             st.session_state.network_loaded = True
             st.success("Network loaded successfully!")
 
@@ -349,6 +356,7 @@ with st.sidebar:
     if st.sidebar.button("Load Example 'scigrid_de'"):
         n = pypsa.examples.scigrid_de()
         st.session_state.n = n
+        st.session_state.costs_modified = False
         st.success("Example network loaded!")
 
     if st.session_state.network_loaded:
@@ -521,6 +529,7 @@ if t_economic.open:
                             new_cc[d] * default_om / 100
                         )
 
+                st.session_state.costs_modified = True
                 st.success("Updated details for mentioned technologies ...")
                 st.write(
                     "Remark: in this table the column capital_cost refersto annuity plus fixed O&M costs."
@@ -726,7 +735,10 @@ if t_optimization.open:
 
                 col1, col2, col3, col4 = st.columns(4)
 
-                col1.metric("Cost setup", "Custom")
+                cost_setup = (
+                    "Custom" if st.session_state.get("costs_modified") else "Reference"
+                )
+                col1.metric("Cost setup", cost_setup)
                 col2.metric("H2 demand", f"{demand['custom_h2']:.1f} Mtpa")
                 col3.metric("Ammonia demand", f"{ammonia:.1f} Mtpa")
                 col4.metric("Methanol demand", f"{methanol:.1f} Mtpa")
@@ -745,7 +757,7 @@ if t_optimization.open:
                     months = st.multiselect(
                         "Select the months to consider:",
                         [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-                        default=[1, 4, 7, 10],
+                        default=[1],
                     )
 
                 with col3:
@@ -769,7 +781,6 @@ if t_optimization.open:
 
             if st.button("Run LOPF"):
                 n2 = n.copy()
-                g = n2.generators
 
                 if run_mode in ["Full Month", "Week per Month"]:
                     sns_before = len(n2.snapshots)
@@ -859,19 +870,28 @@ if t_optimization.open:
                             (avoided_import_cost - optimized_system_cost) / 1e6, 1
                         )  # million AUD
 
+                    run_name = scenario_id
+
+                    if (
+                        st.session_state.results is not None
+                        and run_name in st.session_state.results.columns
+                    ):
+                        run_name = f"{scenario_id}_r{st.session_state.opt_runs}"
+
                     if st.session_state.results is None:
-                        cap_df = expanded_cap.to_frame(
-                            name=f"run {st.session_state.opt_runs}"
-                        )
+                        cap_df = expanded_cap.to_frame(name=run_name)
                     else:
                         cap_df = st.session_state.results.join(
-                            expanded_cap.to_frame(
-                                name=f"run {st.session_state.opt_runs}"
-                            )
+                            expanded_cap.to_frame(name=run_name)
                         )
 
                     # save the cap_df to be used in the 'View Results' tab
                     st.session_state.results = cap_df
+
+                    if "scenario_metadata" not in st.session_state:
+                        st.session_state.scenario_metadata = {}
+
+                    st.session_state.scenario_metadata[run_name] = scenario_summary
 
                     st.write(
                         """
@@ -898,7 +918,12 @@ if t_results.open:
             # only show rows where there is a difference in the values across runs
             df = df[df.nunique(axis=1) > 1]
             st.dataframe(df.T.style.format("{:.1f}"))
-            #
+            if "scenario_metadata" in st.session_state:
+                st.subheader("Scenario descriptions")
+
+                for k, v in st.session_state.scenario_metadata.items():
+                    st.write(f"**{k}**")
+                    st.caption(v)
             st.header("Economic Comparison")
             df = st.session_state.results
             df = df / 1e3  # convert to million AUD
