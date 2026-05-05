@@ -100,7 +100,6 @@ MWH_PER_TONNE: dict[str, float] = {
     "e_methanol": 5.54,
 }
 
-# TODO: Diesel is currently only an external counterfactual cost parameter because the current model configuration has no diesel load carrier.
 load_data: dict[str, dict[str, int | float | str | list[str]]] = {
     "custom_h2": {
         "multiplier": 1,
@@ -202,6 +201,89 @@ def show_statistics(n: pypsa.Network):
         df = df[~df.index.str.endswith("Constraint")]
         df = df[~df.index.str.endswith("Type")]
         st.bar_chart(df, height=275)
+
+
+def compact_number_tag(value: float, decimals: int = 1) -> str:
+    """Return a compact numeric tag for scenario IDs."""
+    return f"{value:.{decimals}f}".replace(".", "p")
+
+
+def get_current_demand_values() -> dict[str, float]:
+    """Return current demand values from the Streamlit session state in Mtpa."""
+    old_multiplier = st.session_state.get("old_multiplier")
+    new_multiplier = st.session_state.get("new_multiplier")
+
+    source = new_multiplier if new_multiplier is not None else old_multiplier
+
+    values = {
+        "custom_h2": 0.0,
+        "grey_ammonia": 0.0,
+        "e_ammonia": 0.0,
+        "grey_methanol": 0.0,
+        "e_methanol": 0.0,
+    }
+
+    if source is None:
+        return values
+
+    for key in values:
+        values[key] = float(source.get(key, 0.0))
+
+    return values
+
+
+def build_scenario_id(
+    country: str = "AU",
+    year: int = 2030,
+    clusters: int = 10,
+    resolution: str = "3h",
+    cost_tag: str = "costCustom",
+) -> str:
+    """Build a deterministic scenario ID from current UI settings."""
+    demand = get_current_demand_values()
+
+    ammonia = demand["grey_ammonia"] + demand["e_ammonia"]
+    methanol = demand["grey_methanol"] + demand["e_methanol"]
+
+    return "_".join(
+        [
+            country,
+            str(year),
+            f"{clusters}c",
+            resolution,
+            cost_tag,
+            f"H2_{compact_number_tag(demand['custom_h2'])}Mt",
+            f"NH3_{compact_number_tag(ammonia)}Mt",
+            f"MeOH_{compact_number_tag(methanol)}Mt",
+        ]
+    )
+
+
+def build_scenario_summary(
+    country_name: str = "Australia",
+    year: int = 2030,
+    clusters: int = 10,
+    resolution: str = "3h",
+    cost_label: str = "Custom technology costs",
+) -> str:
+    """Build a human-readable scenario summary."""
+    demand = get_current_demand_values()
+
+    ammonia = demand["grey_ammonia"] + demand["e_ammonia"]
+    methanol = demand["grey_methanol"] + demand["e_methanol"]
+
+    return " | ".join(
+        [
+            country_name,
+            str(year),
+            f"{clusters} clusters",
+            resolution,
+            cost_label,
+            f"H2: {demand['custom_h2']:.1f} Mtpa",
+            f"Ammonia: {ammonia:.1f} Mtpa",
+            f"Methanol: {methanol:.1f} Mtpa",
+        ]
+    )
 
 
 title = "AUS eFuels"
@@ -526,22 +608,24 @@ if t_demand.open:
 
                 for l in load_data:
                     col1, col2, col3, col4 = st.columns(4, vertical_alignment="top")
+
                     with col1:
                         st.write(f"**{load_data[l]['label']}**")
+
                     with col2:
-                        if l != "diesel":
-                            st.write(f"{old_multiplier[l]:.1f} MTPA")
+                        st.write(f"{old_multiplier[l]:.1f} MTPA")
+
                     with col3:
-                        if l != "diesel":
-                            new_multiplier[l] = st.slider(
-                                label=f"Demand Multiplier {l}",
-                                label_visibility="collapsed",
-                                min_value=0.0,
-                                max_value=20.0,
-                                step=0.1,
-                                value=round_multiple(old_multiplier[l], 0.1),
-                                format="%.1f MTPA",
-                            )
+                        new_multiplier[l] = st.slider(
+                            label=f"Demand Multiplier {l}",
+                            label_visibility="collapsed",
+                            min_value=0.0,
+                            max_value=20.0,
+                            step=0.1,
+                            value=round_multiple(old_multiplier[l], 0.1),
+                            format="%.1f MTPA",
+                        )
+
                     with col4:
                         new_cost[l] = st.slider(
                             label=f"Cost {l}",
@@ -617,6 +701,36 @@ if t_optimization.open:
             new_cost = st.session_state.new_cost
 
             st.header("Run Optimization")
+
+            scenario_id = build_scenario_id()
+            scenario_summary = build_scenario_summary()
+            demand = get_current_demand_values()
+
+            ammonia = demand["grey_ammonia"] + demand["e_ammonia"]
+            methanol = demand["grey_methanol"] + demand["e_methanol"]
+
+            with st.expander("Scenario Overview", expanded=True):
+                st.write("**Scenario ID**")
+                st.code(scenario_id, language=None)
+
+                st.write("**Scenario Summary**")
+                st.write(scenario_summary)
+
+            with st.expander("Configuration", expanded=True):
+                col1, col2, col3, col4 = st.columns(4)
+
+                col1.metric("Country", "Australia")
+                col2.metric("Planning year", "2030")
+                col3.metric("Clusters", "10")
+                col4.metric("Resolution", "3h")
+
+                col1, col2, col3, col4 = st.columns(4)
+
+                col1.metric("Cost setup", "Custom")
+                col2.metric("H2 demand", f"{demand['custom_h2']:.1f} Mtpa")
+                col3.metric("Ammonia demand", f"{ammonia:.1f} Mtpa")
+                col4.metric("Methanol demand", f"{methanol:.1f} Mtpa")
+
             with st.expander("Snapshot Options", expanded=True):
                 col1, col2, col3 = st.columns(3, vertical_alignment="top")
                 with col1:
@@ -710,13 +824,8 @@ if t_optimization.open:
                     )
 
                 if status == "ok":
-                    # Show Results
                     st.success(f"Optimization finished: {condition}")
-                    # st.metric("Total System Cost", f"${n2.objective:,.2f}")
-                    st.subheader("Results: Generation Dispatch")
 
-                    dispatch = n2.generators_t.p
-                    st.bar_chart(dispatch, y_label="MW")
                     # calculate the annual costs for importing e-fuels otherwise
                     if new_cost is None or new_multiplier is None:
                         st.warning(
@@ -749,7 +858,7 @@ if t_optimization.open:
                         expanded_cap[("Economics", "Savings")] = round(
                             (avoided_import_cost - optimized_system_cost) / 1e6, 1
                         )  # million AUD
-                    #
+
                     if st.session_state.results is None:
                         cap_df = expanded_cap.to_frame(
                             name=f"run {st.session_state.opt_runs}"
@@ -760,9 +869,10 @@ if t_optimization.open:
                                 name=f"run {st.session_state.opt_runs}"
                             )
                         )
-                    #
+
                     # save the cap_df to be used in the 'View Results' tab
                     st.session_state.results = cap_df
+
                     st.write(
                         """
                         Successfully optimized the network with the new parameters.
