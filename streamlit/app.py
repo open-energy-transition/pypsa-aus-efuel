@@ -550,8 +550,22 @@ if t_demand.open:
                             max_value=10_000.0,
                             step=0.1,
                             value=round_multiple(new_cost[l], 0.1),
-                            format="%.1f AUD/Tonne",
+                            format="%.1f AUD/t",
                         )
+
+                        if l in ["grey_methanol", "e_methanol"]:
+                            diesel_equivalent = (
+                                new_cost[l]
+                                * MWH_PER_TONNE["diesel"]
+                                / MWH_PER_TONNE[l]
+                                / 1000
+                                / 0.85
+                            )
+
+                            st.caption(
+                                f"Equivalent diesel replacement value: "
+                                f"{diesel_equivalent:.2f} AUD/litre diesel"
+                            )
 
                 st.session_state.old_multiplier = old_multiplier
                 st.session_state.new_multiplier = new_multiplier
