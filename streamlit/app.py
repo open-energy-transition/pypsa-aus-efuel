@@ -614,10 +614,8 @@ if t_optimization.open:
             )
         else:
             n = st.session_state.n
-            old_multiplier = st.session_state.old_multiplier
             new_multiplier = st.session_state.new_multiplier
             new_cost = st.session_state.new_cost
-            new_multiplier = st.session_state.new_multiplier
 
             st.header("Run Optimization")
             with st.expander("Snapshot Options", expanded=True):
@@ -625,34 +623,33 @@ if t_optimization.open:
                 with col1:
                     run_mode = st.radio(
                         "Select the number of desired optimization snapshots:",
-                        [
-                            "Full Year",
-                            "Week per Month",
-                        ],
-                        index=1,
+                        ["Full Year", "Full Month", "Week per Month"],
+                        index=2,
                         horizontal=True,
                     )
 
                 with col2:
-                    weeks = st.radio(
-                        "In case of 'Week per Month', select the week within the month to consider ...",
-                        [1, 2, 3, 4],
-                        index=1,
-                        horizontal=True,
-                    )
                     months = st.multiselect(
-                        "... and the months to consider!",
+                        "Select the months to consider:",
                         [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
                         default=[1, 4, 7, 10],
                     )
 
+                with col3:
+                    if run_mode == "Week per Month":
+                        weeks = st.radio(
+                            "Select the week within each selected month:",
+                            [1, 2, 3, 4],
+                            index=1,
+                            horizontal=True,
+                        )
+                    else:
+                        weeks = None
+
             with st.expander("Solver Options", expanded=True):
                 solver_name = st.radio(
                     "Select the solver to use for optimization:",
-                    [
-                        "highs",
-                        "OETC",
-                    ],
+                    ["highs", "OETC"],
                     index=0,
                     horizontal=True,
                 )
@@ -661,16 +658,33 @@ if t_optimization.open:
                 n2 = n.copy()
                 g = n2.generators
 
-                if run_mode == "Week per Month":
-                    start_day = (weeks - 1) * 7 + 1
-
-                    end_day = start_day + 7
-
+                if run_mode in ["Full Month", "Week per Month"]:
                     sns_before = len(n2.snapshots)
-                    sns_subset = get_snapshots(
-                        n2, start_day=start_day, end_day=end_day, months=months
-                    )
+
+                    if run_mode == "Full Month":
+                        sns_subset = n2.snapshots[
+                            n2.snapshots.strftime("%m").astype(int).isin(months)
+                        ]
+
+                    elif run_mode == "Week per Month":
+                        start_day = (weeks - 1) * 7 + 1
+                        end_day = start_day + 7
+
+                        sns_subset = get_snapshots(
+                            n2,
+                            start_day=start_day,
+                            end_day=end_day,
+                            months=months,
+                        )
+
                     sns_after = len(sns_subset)
+
+                    if sns_after == 0:
+                        st.error(
+                            "No snapshots selected. Please choose at least one valid month/week."
+                        )
+                        st.stop()
+
                     n2.set_snapshots(sns_subset)
                     n2.snapshot_weightings = (
                         n2.snapshot_weightings * sns_before / sns_after
@@ -689,8 +703,8 @@ if t_optimization.open:
                     status, condition = n2.optimize(
                         solver_name=solver_name,
                         assign_all_duals=False,
-                        include_objective_constant=False,
                         solver_options={
+                            "solver": "hipo",
                             "user_objective_scale": -2,
                             "user_bound_scale": -14,
                         },
@@ -701,7 +715,8 @@ if t_optimization.open:
                     st.success(f"Optimization finished: {condition}")
                     # st.metric("Total System Cost", f"${n2.objective:,.2f}")
                     st.subheader("Results: Generation Dispatch")
-                    dispatch = n2.generators_t.p  # .sum()
+
+                    dispatch = n2.generators_t.p
                     st.bar_chart(dispatch, y_label="MW")
                     # calculate the annual costs for importing e-fuels otherwise
                     if new_cost is None or new_multiplier is None:
