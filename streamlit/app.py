@@ -243,9 +243,6 @@ def build_scenario_id(
 
     cost_tag = "costCustom" if st.session_state.get("costs_modified") else "costRef"
 
-    ammonia = demand["grey_ammonia"] + demand["e_ammonia"]
-    methanol = demand["grey_methanol"] + demand["e_methanol"]
-
     return "_".join(
         [
             country,
@@ -254,8 +251,10 @@ def build_scenario_id(
             resolution,
             cost_tag,
             f"H2_{compact_number_tag(demand['custom_h2'])}Mt",
-            f"NH3_{compact_number_tag(ammonia)}Mt",
-            f"MeOH_{compact_number_tag(methanol)}Mt",
+            f"gNH3_{compact_number_tag(demand['grey_ammonia'])}Mt",
+            f"eNH3_{compact_number_tag(demand['e_ammonia'])}Mt",
+            f"gMeOH_{compact_number_tag(demand['grey_methanol'])}Mt",
+            f"eMeOH_{compact_number_tag(demand['e_methanol'])}Mt",
         ]
     )
 
@@ -284,8 +283,10 @@ def build_scenario_summary(
             resolution,
             cost_label,
             f"H2: {demand['custom_h2']:.1f} Mtpa",
-            f"Ammonia: {ammonia:.1f} Mtpa",
-            f"Methanol: {methanol:.1f} Mtpa",
+            f"Grey ammonia: {demand['grey_ammonia']:.1f} Mtpa",
+            f"e-ammonia: {demand['e_ammonia']:.1f} Mtpa",
+            f"Grey methanol: {demand['grey_methanol']:.1f} Mtpa",
+            f"e-methanol: {demand['e_methanol']:.1f} Mtpa",
         ]
     )
 
@@ -321,6 +322,10 @@ if "PYPSA_VERSION" not in st.session_state:
     st.session_state.PYPSA_VERSION = None
 if "costs_modified" not in st.session_state:
     st.session_state.costs_modified = False
+if "solved_networks" not in st.session_state:
+    st.session_state.solved_networks = {}
+if "scenario_metadata" not in st.session_state:
+    st.session_state.scenario_metadata = {}
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -747,8 +752,15 @@ if t_optimization.open:
                 )
                 col1.metric("Cost setup", cost_setup)
                 col2.metric("H2 demand", f"{demand['custom_h2']:.1f} Mtpa")
-                col3.metric("Ammonia demand", f"{ammonia:.1f} Mtpa")
-                col4.metric("Methanol demand", f"{methanol:.1f} Mtpa")
+                col3.metric("Grey ammonia", f"{demand['grey_ammonia']:.1f} Mtpa")
+                col4.metric("e-ammonia", f"{demand['e_ammonia']:.1f} Mtpa")
+
+                col1, col2, col3, col4 = st.columns(4)
+
+                col1.metric("Grey methanol", f"{demand['grey_methanol']:.1f} Mtpa")
+                col2.metric("e-methanol", f"{demand['e_methanol']:.1f} Mtpa")
+                col3.metric("Total ammonia", f"{ammonia:.1f} Mtpa")
+                col4.metric("Total methanol", f"{methanol:.1f} Mtpa")
 
             with st.expander("Snapshot Options", expanded=True):
                 col1, col2, col3 = st.columns(3, vertical_alignment="top")
@@ -885,6 +897,9 @@ if t_optimization.open:
                     ):
                         run_name = f"{scenario_id}_r{st.session_state.opt_runs}"
 
+                    st.session_state.solved_networks[run_name] = n2
+                    st.session_state.scenario_metadata[run_name] = scenario_summary
+
                     if st.session_state.results is None:
                         cap_df = expanded_cap.to_frame(name=run_name)
                     else:
@@ -894,11 +909,6 @@ if t_optimization.open:
 
                     # save the cap_df to be used in the 'View Results' tab
                     st.session_state.results = cap_df
-
-                    if "scenario_metadata" not in st.session_state:
-                        st.session_state.scenario_metadata = {}
-
-                    st.session_state.scenario_metadata[run_name] = scenario_summary
 
                     st.write(
                         """
