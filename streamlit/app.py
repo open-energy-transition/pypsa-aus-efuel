@@ -102,13 +102,6 @@ MWH_PER_TONNE: dict[str, float] = {
 
 # TODO: Diesel is currently only an external counterfactual cost parameter because the current model configuration has no diesel load carrier.
 load_data: dict[str, dict[str, int | float | str | list[str]]] = {
-    "diesel": {
-        "multiplier": 0,
-        "label": "Diesel",
-        "cost": 2500,
-        "carriers": [],
-        "loads": [],
-    },
     "custom_h2": {
         "multiplier": 1,
         "label": "Hydrogen",
@@ -559,11 +552,6 @@ if t_demand.open:
                             value=round_multiple(new_cost[l], 0.1),
                             format="%.1f AUD/Tonne",
                         )
-                        if l == "diesel":
-                            st.write(
-                                f"... equals ~{new_cost[l]/0.85/1000:.2f} AUD/liter"
-                            )
-                            st.write("")
 
                 st.session_state.old_multiplier = old_multiplier
                 st.session_state.new_multiplier = new_multiplier
@@ -572,9 +560,6 @@ if t_demand.open:
             if st.button("Apply New Demand"):
                 name_loads = []
                 for l in load_data:
-                    if l == "diesel":
-                        continue
-
                     loads = get_loads_for_demand_entry(
                         n,
                         carriers=load_data[l]["carriers"],
@@ -725,11 +710,9 @@ if t_optimization.open:
                         )
                         avoided_import_cost = None
                     else:
-                        avoided_import_cost = 0
-                        for l in load_data:
-                            if l == "diesel":
-                                continue
+                        avoided_import_cost = 0.0
 
+                        for l in load_data:
                             loads = get_loads_for_demand_entry(
                                 n2,
                                 carriers=load_data[l]["carriers"],
