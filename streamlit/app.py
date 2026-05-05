@@ -16,6 +16,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pypsa
+from results_helpers import (
+    compute_annual_flow_by_carrier,
+    compute_capacity_by_carrier,
+    get_available_result_categories,
+)
 
 import streamlit as st
 
@@ -488,14 +493,18 @@ if t_economic.open:
                             format="%.1f%%",
                         )
                     with col3:
+                        initial_cc = investment_cost(old_cc[d], new_dr[d], old_lt[d])
+                        st.session_state.setdefault(f"initial_cc_{d}", initial_cc)
+
                         new_cc[d] = st.slider(
                             label=f"cc_{tech_data[d]['label']}",
                             label_visibility="collapsed",
                             min_value=1.0,
                             max_value=10_000_000.0,
-                            value=investment_cost(old_cc[d], new_dr[d], old_lt[d]),
+                            value=initial_cc,
                             step=0.1,
                             format="%,.1f AUD/MW",
+                            key=f"cc_{d}",
                         )
                     with col4:
                         new_mc[d] = st.slider(
@@ -537,7 +546,7 @@ if t_economic.open:
                 st.session_state.costs_modified = any(
                     not np.isclose(new_dr[d], old_dr[d])
                     or not np.isclose(
-                        new_cc[d], investment_cost(old_cc[d], new_dr[d], old_lt[d])
+                        new_cc[d], st.session_state.get(f"initial_cc_{d}", new_cc[d])
                     )
                     or not np.isclose(new_mc[d], old_mc[d])
                     for d in tech_data
@@ -924,6 +933,73 @@ if t_optimization.open:
 if t_results.open:
     with t_results:
         if st.session_state.results is not None:
+            st.header("Results Explorer")
+
+            available_runs = list(st.session_state.solved_networks.keys())
+
+            selected_runs = st.multiselect(
+                "Select solved scenarios",
+                available_runs,
+                default=available_runs[-1:],
+            )
+
+            category = st.radio(
+                "Select result category",
+                get_available_result_categories(),
+                horizontal=True,
+            )
+
+            if selected_runs:
+                selected_networks = {
+                    run: st.session_state.solved_networks[run] for run in selected_runs
+                }
+
+                if category == "Electricity":
+                    cap_df = compute_capacity_by_carrier(selected_networks, category)
+                    y_label = "GW"
+                    result_title = "Electricity - Installed / expanded capacity"
+                else:
+                    cap_df = compute_annual_flow_by_carrier(
+                        selected_networks,
+                        category,
+                        MWH_PER_TONNE,
+                    )
+                    y_label = "Mtpa"
+                    result_title = f"{category} - Annual production / capture"
+
+                st.subheader(result_title)
+
+                if cap_df.empty:
+                    st.warning(f"No result data found for {category}.")
+                else:
+                    chart_df = cap_df.pivot_table(
+                        index="scenario",
+                        columns="carrier",
+                        values="value",
+                        aggfunc="sum",
+                        fill_value=0.0,
+                    )
+
+                    st.bar_chart(chart_df, y_label=y_label, height=600)
+
+                    table_df = (
+                        cap_df.drop(columns=["component"], errors="ignore")
+                        .pivot_table(
+                            index=["carrier", "unit"],
+                            columns="scenario",
+                            values="value",
+                            aggfunc="sum",
+                            fill_value=0.0,
+                        )
+                        .reset_index()
+                        .rename(columns={"carrier": "Carrier", "unit": "Unit"})
+                    )
+
+                    with st.expander(f"Show {category} data table", expanded=False):
+                        st.dataframe(
+                            table_df, use_container_width=True, hide_index=True
+                        )
+
             st.header("Technical Comparison")
             st.write(
                 "Only the technologies being different are shown in the table below, while the economic comparison is shown in the chart below."
