@@ -64,10 +64,13 @@ rich = "*"
 highspy = { version = ">=1.13.2.dev0", channel = "conda-forge/label/dev" }
 openjdk = "17.*"
 streamlit = ">=1.57.0,<2"
+linopy = ">=0.6.7,<0.7"
+highs = ">=1.14.0,<2"
 
 [pypi-dependencies]
 currencyconverter = "*"
 googledrivedownloader = ">=1.1"
+zenodo-get = ">=3.0.0, <4"
 
 [activation]
 scripts = ["pixi/activate.sh"]

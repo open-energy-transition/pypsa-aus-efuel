@@ -189,6 +189,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/hdf4-4.2.15-h2a13503_7.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/hdf5-1.14.6-nompi_h19486de_108.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/hicolor-icon-theme-0.17-ha770c72_3.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/highs-1.14.0-h171cf75_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/highspy-1.14.0-np2py311h912ec1f_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/holoviews-1.22.1-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/hpack-4.1.0-pyhd8ed1ab_0.conda
@@ -340,7 +341,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libzip-1.11.2-h6991a6a_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libzlib-1.3.2-h25fd6f3_2.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/linkify-it-py-2.1.0-pyhcf101f3_0.conda
-      - conda: https://conda.anaconda.org/conda-forge/noarch/linopy-0.6.6-pyhc364b38_1.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/linopy-0.6.7-pyhc364b38_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/llvmlite-0.47.0-py311h41a00d4_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/locket-1.0.0-pyhd8ed1ab_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/linux-64/lxml-6.0.2-py311h8840267_2.conda
@@ -596,8 +597,13 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/zlib-1.3.2-h25fd6f3_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/zlib-ng-2.3.3-hceb46e0_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/zstd-1.5.7-hb78ec9c_6.conda
+      - pypi: https://files.pythonhosted.org/packages/92/be/b1afb692be85b947f3401375851484496134c5554e67e822c35f28bf2fbc/coverage-7.13.5-cp311-cp311-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/34/51/c91991157f503aebff66f0eba77589bf73950c211af833c2ea5242afcca8/currencyconverter-0.18.16-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/0a/74/674a4cfe65440441b8a9296346173fe5df9c83decde09094c16826aa06fc/googledrivedownloader-1.1.0-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/c5/a8/aadeaa9a28510727d538636ee8688f0782a98523147852b29404ce696f1b/httpx_retries-0.5.0-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/c5/7b/bca5613a0c3b542420cf92bd5e5fb8ebd5435ce1011a091f66bb7693285e/humanize-4.15.0-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/0c/29/0348de65b8cc732daa3e33e67806420b2ae89bdce2b04af740289c5c6c8c/loguru-0.7.3-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/b5/98/bdb6d90f9b7ee26bffad4469127bdbfe42d51b0cd56f526d0705473fcabb/zenodo_get-3.0.0-py3-none-any.whl
 packages:
 - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda
   build_number: 20
@@ -1925,6 +1931,13 @@ packages:
   - pkg:pypi/country-converter?source=hash-mapping
   size: 51091
   timestamp: 1761151175246
+- pypi: https://files.pythonhosted.org/packages/92/be/b1afb692be85b947f3401375851484496134c5554e67e822c35f28bf2fbc/coverage-7.13.5-cp311-cp311-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl
+  name: coverage
+  version: 7.13.5
+  sha256: ec10e2a42b41c923c2209b846126c6582db5e43a33157e9870ba9fb70dc7854b
+  requires_dist:
+  - tomli ; python_full_version <= '3.11' and extra == 'toml'
+  requires_python: '>=3.10'
 - conda: https://conda.anaconda.org/conda-forge/noarch/cpython-3.11.15-py311hd8ed1ab_0.conda
   noarch: generic
   sha256: 4811072ccc369c80cb94156fb96fa234db1b90120c0859dc173bea42d49a57b5
@@ -3187,6 +3200,18 @@ packages:
   purls: []
   size: 17625
   timestamp: 1771539597968
+- conda: https://conda.anaconda.org/conda-forge/linux-64/highs-1.14.0-h171cf75_0.conda
+  sha256: 67f90dff2b4a2f1944e24857d876824a2a9b727762b4130be16336845fe7576c
+  md5: 589e63ac843838bbc18c5bbd570782e7
+  depends:
+  - libstdcxx >=14
+  - libgcc >=14
+  - __glibc >=2.17,<3.0.a0
+  license: MIT
+  license_family: MIT
+  purls: []
+  size: 2520488
+  timestamp: 1775498171983
 - conda: https://conda.anaconda.org/conda-forge/linux-64/highspy-1.14.0-np2py311h912ec1f_0.conda
   sha256: 49659b4b6bfc06c92efed2630864e03e68913af90e5ae8815e6a5fa3d79bf029
   md5: 3435da995a5ca570dd18d6f29f100f2a
@@ -3281,6 +3306,13 @@ packages:
   - pkg:pypi/httpx?source=hash-mapping
   size: 63082
   timestamp: 1733663449209
+- pypi: https://files.pythonhosted.org/packages/c5/a8/aadeaa9a28510727d538636ee8688f0782a98523147852b29404ce696f1b/httpx_retries-0.5.0-py3-none-any.whl
+  name: httpx-retries
+  version: 0.5.0
+  sha256: d3124592979a9dc6197e666d1f02e9ab996a0c58fce59fad8db6201a6a87304e
+  requires_dist:
+  - httpx>=0.20.0
+  requires_python: '>=3.10'
 - conda: https://conda.anaconda.org/conda-forge/noarch/humanfriendly-10.0-pyh707e725_8.conda
   sha256: fa2071da7fab758c669e78227e6094f6b3608228740808a6de5d6bce83d9e52d
   md5: 7fe569c10905402ed47024fc481bb371
@@ -3293,6 +3325,15 @@ packages:
   - pkg:pypi/humanfriendly?source=hash-mapping
   size: 73563
   timestamp: 1733928021866
+- pypi: https://files.pythonhosted.org/packages/c5/7b/bca5613a0c3b542420cf92bd5e5fb8ebd5435ce1011a091f66bb7693285e/humanize-4.15.0-py3-none-any.whl
+  name: humanize
+  version: 4.15.0
+  sha256: b1186eb9f5a9749cd9cb8565aee77919dd7c8d076161cf44d70e59e3301e1769
+  requires_dist:
+  - freezegun ; extra == 'tests'
+  - pytest ; extra == 'tests'
+  - pytest-cov ; extra == 'tests'
+  requires_python: '>=3.10'
 - conda: https://conda.anaconda.org/conda-forge/noarch/hvplot-0.12.2-pyhd8ed1ab_0.conda
   sha256: 2b1b67462c87b1252733b8d45d88a68de513ba9852d210c77f64f0d20a558603
   md5: a3ebf00cb037e464061fcf68a5a75d83
@@ -5392,12 +5433,12 @@ packages:
   - pkg:pypi/linkify-it-py?source=hash-mapping
   size: 26062
   timestamp: 1772476821244
-- conda: https://conda.anaconda.org/conda-forge/noarch/linopy-0.6.6-pyhc364b38_1.conda
-  sha256: 1d46bb40bcccf85c06a6c4146715c1cd4cec3185d39587233fe18c4394a41d87
-  md5: c1c64645ec79275e496eeefb689d4d47
+- conda: https://conda.anaconda.org/conda-forge/noarch/linopy-0.6.7-pyhc364b38_0.conda
+  sha256: 8d759c5c9961dcb4523362334f52521a5e5770ceafe8b17a8350ad0958bba74d
+  md5: 55d19f7062b690dd95e669e9a0bb5fba
   depends:
   - python >=3.11
-  - numpy
+  - numpy <2
   - scipy
   - bottleneck
   - toolz
@@ -5415,8 +5456,8 @@ packages:
   license_family: MIT
   purls:
   - pkg:pypi/linopy?source=hash-mapping
-  size: 100245
-  timestamp: 1774520821548
+  size: 100448
+  timestamp: 1776764613610
 - conda: https://conda.anaconda.org/conda-forge/linux-64/llvmlite-0.47.0-py311h41a00d4_0.conda
   sha256: 3cc12c29caf0cca92cf4c32b2e3a1b492e465fc5b3fd3501f8d9c3d34a2e86f6
   md5: 877e070228a8627171a0accb22c5a6c6
@@ -5445,6 +5486,39 @@ packages:
   - pkg:pypi/locket?source=hash-mapping
   size: 8250
   timestamp: 1650660473123
+- pypi: https://files.pythonhosted.org/packages/0c/29/0348de65b8cc732daa3e33e67806420b2ae89bdce2b04af740289c5c6c8c/loguru-0.7.3-py3-none-any.whl
+  name: loguru
+  version: 0.7.3
+  sha256: 31a33c10c8e1e10422bfd431aeb5d351c7cf7fa671e3c4df004162264b28220c
+  requires_dist:
+  - colorama>=0.3.4 ; sys_platform == 'win32'
+  - aiocontextvars>=0.2.0 ; python_full_version < '3.7'
+  - win32-setctime>=1.0.0 ; sys_platform == 'win32'
+  - pre-commit==4.0.1 ; python_full_version >= '3.9' and extra == 'dev'
+  - tox==3.27.1 ; python_full_version < '3.8' and extra == 'dev'
+  - tox==4.23.2 ; python_full_version >= '3.8' and extra == 'dev'
+  - pytest==6.1.2 ; python_full_version < '3.8' and extra == 'dev'
+  - pytest==8.3.2 ; python_full_version >= '3.8' and extra == 'dev'
+  - pytest-cov==2.12.1 ; python_full_version < '3.8' and extra == 'dev'
+  - pytest-cov==5.0.0 ; python_full_version == '3.8.*' and extra == 'dev'
+  - pytest-cov==6.0.0 ; python_full_version >= '3.9' and extra == 'dev'
+  - pytest-mypy-plugins==1.9.3 ; python_full_version >= '3.6' and python_full_version < '3.8' and extra == 'dev'
+  - pytest-mypy-plugins==3.1.0 ; python_full_version >= '3.8' and extra == 'dev'
+  - colorama==0.4.5 ; python_full_version < '3.8' and extra == 'dev'
+  - colorama==0.4.6 ; python_full_version >= '3.8' and extra == 'dev'
+  - freezegun==1.1.0 ; python_full_version < '3.8' and extra == 'dev'
+  - freezegun==1.5.0 ; python_full_version >= '3.8' and extra == 'dev'
+  - exceptiongroup==1.1.3 ; python_full_version >= '3.7' and python_full_version < '3.11' and extra == 'dev'
+  - mypy==0.910 ; python_full_version < '3.6' and extra == 'dev'
+  - mypy==0.971 ; python_full_version == '3.6.*' and extra == 'dev'
+  - mypy==1.4.1 ; python_full_version == '3.7.*' and extra == 'dev'
+  - mypy==1.13.0 ; python_full_version >= '3.8' and extra == 'dev'
+  - sphinx==8.1.3 ; python_full_version >= '3.11' and extra == 'dev'
+  - sphinx-rtd-theme==3.0.2 ; python_full_version >= '3.11' and extra == 'dev'
+  - myst-parser==4.0.0 ; python_full_version >= '3.11' and extra == 'dev'
+  - build==1.2.2 ; python_full_version >= '3.11' and extra == 'dev'
+  - twine==6.0.1 ; python_full_version >= '3.11' and extra == 'dev'
+  requires_python: '>=3.5,<4.0'
 - conda: https://conda.anaconda.org/conda-forge/linux-64/lxml-6.0.2-py311h8840267_2.conda
   sha256: 0ac54d70e352ed29db9114d87c37915f5c81687df13bc9b7e470148a183bbaca
   md5: 70d29ba2cad4b6b18c0e63d4c9369d83
@@ -9093,6 +9167,22 @@ packages:
   - pkg:pypi/yte?source=hash-mapping
   size: 16215
   timestamp: 1764250734338
+- pypi: https://files.pythonhosted.org/packages/b5/98/bdb6d90f9b7ee26bffad4469127bdbfe42d51b0cd56f526d0705473fcabb/zenodo_get-3.0.0-py3-none-any.whl
+  name: zenodo-get
+  version: 3.0.0
+  sha256: 8212dfdb57730392b5c44db240308e666edfb67f3c80010005f57812b1bc16a9
+  requires_dist:
+  - httpx
+  - humanize
+  - click
+  - loguru
+  - tqdm
+  - coverage>=7.8.2
+  - httpx-retries>=0.4.5
+  - coverage ; extra == 'dev'
+  - codecov ; extra == 'dev'
+  - coveralls ; extra == 'dev'
+  requires_python: '>=3.10'
 - conda: https://conda.anaconda.org/conda-forge/linux-64/zeromq-4.3.5-h41580af_10.conda
   sha256: 325d370b28e2b9cc1f765c5b4cdb394c91a5d958fbd15da1a14607a28fee09f6
   md5: 755b096086851e1193f3b10347415d7c
