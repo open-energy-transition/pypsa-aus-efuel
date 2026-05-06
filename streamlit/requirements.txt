@@ -1,7 +1,10 @@
-matplotlib
-numpy
-pandas
-highspy
-linopy
-pypsa
 streamlit
+matplotlib
+numpy<2.0
+pandas<2.2
+xarray<2025.0
+linopy<0.5
+pypsa<0.34
+highspy
+scipy
+netcdf4
