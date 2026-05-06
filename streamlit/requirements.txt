@@ -1,10 +1,10 @@
 streamlit
 matplotlib
-numpy<2.0
-pandas<2.2
-xarray<2025.0
-linopy<0.5
-pypsa<0.34
+numpy==1.26.4
+pandas==2.3.3
+xarray==2025.1.2
+pypsa==0.30.3
+linopy==0.6.7
 highspy
 scipy
 netcdf4
