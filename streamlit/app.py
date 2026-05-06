@@ -374,7 +374,8 @@ with st.sidebar:
                         for chunk in r.iter_content(chunk_size=8192):
                             f.write(chunk)
 
-                n = pypsa.Network(f"{SAVE_DIR}/{zenodo_file_name}")
+                tmp_path = f"{SAVE_DIR}/{zenodo_file_name}"
+                n = pypsa.Network(tmp_path)
                 g = n.generators
                 if "discount_rate" not in g.columns:
                     g["discount_rate"] = st.session_state.dr / 100
@@ -386,6 +387,10 @@ with st.sidebar:
                 st.session_state.costs_modified = False
                 st.session_state.network_loaded = True
                 st.success("Network loaded successfully!")
+
+                # Cleanup the temp file
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
             else:
                 st.error("File not found in the given Zenodo record.")
 
@@ -962,10 +967,10 @@ if t_optimization.open:
                             expanded_cap.to_frame(name=run_name)
                         )
 
-                    # save the cap_df to be used in the 'View Results' tab
+                    # save the cap_df to be used in the 'Results' tab
                     st.session_state.results = cap_df
 
-                    st.write("Check the 'View Results' tab for details.")
+                    st.write("Check the 'Results' tab for details.")
                 else:
                     st.error(f"Solver failed: {condition}")
 
@@ -1137,12 +1142,71 @@ if t_results.open:
                 if "scenario_metadata" in st.session_state:
                     st.subheader("Scenario Descriptions")
                     st.write(
-                        "Below you can find the descriptions for each optimized scenario."
+                        """
+                        Below you can find the descriptions for each optimized scenario.
+                        Demand for hydrogen and hydrogen-based derivatives are given in Mtpa (million ton per annum).
+                        """
                     )
 
+                    df = pd.DataFrame(
+                        columns=[
+                            "Run",
+                            "Country",
+                            "Year",
+                            "Clusters",
+                            "Resolution",
+                            "Cost Setup",
+                            "H2 Demand",
+                            "Grey Ammonia",
+                            "e-Ammonia",
+                            "Grey Methanol",
+                            "e-Methanol",
+                        ]
+                    )
+                    run_nr = 1
                     for k, v in st.session_state.scenario_metadata.items():
-                        st.write(f"**{k}**")
-                        st.caption(v)
+                        (
+                            col1,
+                            col2,
+                            col3,
+                            col4,
+                            col5,
+                            col6,
+                            col7,
+                            col8,
+                            col9,
+                            col10,
+                            col11,
+                        ) = st.columns(11, vertical_alignment="top")
+                        v_split = v.split("|")
+                        st.markdown(f"- **Run {run_nr}**: {k}")
+                        new_row = {
+                            "Run": run_nr,
+                            "Country": v_split[0],
+                            "Year": v_split[1],
+                            "Clusters": v_split[2].replace("clusters", ""),
+                            "Resolution": v_split[3],
+                            "Cost Setup": v_split[4],
+                            "H2 Demand": v_split[5]
+                            .replace("Mtpa", "")
+                            .replace("H2: ", ""),
+                            "Grey Ammonia": v_split[6]
+                            .replace("Mtpa", "")
+                            .replace("Grey ammonia: ", ""),
+                            "e-Ammonia": v_split[7]
+                            .replace("Mtpa", "")
+                            .replace("e-ammonia: ", ""),
+                            "Grey Methanol": v_split[8]
+                            .replace("Mtpa", "")
+                            .replace("Grey methanol: ", ""),
+                            "e-Methanol": v_split[9]
+                            .replace("Mtpa", "")
+                            .replace("e-methanol: ", ""),
+                        }
+                        df.loc[len(df)] = new_row
+                        run_nr += 1
+
+                    st.dataframe(df, hide_index=True)
 
                 st.header("Economic Comparison")
                 df = st.session_state.results
