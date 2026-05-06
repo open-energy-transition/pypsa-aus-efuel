@@ -609,7 +609,7 @@ if t_economic.open:
                 )
                 st.success("Updated details for mentioned technologies ...")
                 st.write(
-                    "Remark: in this table the column capital_cost refersto annuity plus fixed O&M costs."
+                    "Remark: in this table the column capital_cost refers to annuity plus fixed O&M costs."
                 )
                 st.write(
                     g[
