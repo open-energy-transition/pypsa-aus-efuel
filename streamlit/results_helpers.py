@@ -789,3 +789,230 @@ def plot_lcoe_map_by_bus(
     fig.tight_layout()
 
     return fig
+
+
+def compute_lcoh_by_bus(network: pypsa.Network) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Compute production-weighted LCOH for grid H2 by electricity cluster."""
+    snapshot_weights = network.snapshot_weightings.generators
+
+    h2_output_buses = network.buses[network.buses.carrier == "grid H2"].index
+
+    h2_links = network.links[
+        network.links.bus1.isin(h2_output_buses) & (network.links.p_nom_opt > 0)
+    ].copy()
+
+    if h2_links.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
+    h2_dispatch = (-network.links_t.p1[h2_links.index].clip(upper=0)).multiply(
+        snapshot_weights,
+        axis=0,
+    )
+
+    h2_links["h2_output_mwh"] = h2_dispatch.sum()
+    h2_links = h2_links[h2_links["h2_output_mwh"] > 0]
+
+    if h2_links.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
+    # Electricity input to H2 production.
+    electricity_input = (
+        network.links_t.p0[h2_links.index]
+        .clip(lower=0)
+        .multiply(
+            snapshot_weights,
+            axis=0,
+        )
+    )
+
+    # Use local marginal electricity price on bus0.
+    electricity_cost = {}
+    for link_name, row in h2_links.iterrows():
+        bus0 = row["bus0"]
+
+        if bus0 in network.buses_t.marginal_price.columns:
+            electricity_cost[link_name] = (
+                electricity_input[link_name] * network.buses_t.marginal_price[bus0]
+            ).sum()
+        else:
+            electricity_cost[link_name] = 0.0
+
+    h2_links["electricity_cost"] = pd.Series(electricity_cost)
+
+    h2_links["capital_cost_total"] = h2_links["capital_cost"] * h2_links["p_nom_opt"]
+
+    h2_links["marginal_cost_total"] = (
+        h2_links["marginal_cost"] * h2_links["h2_output_mwh"]
+    )
+
+    h2_links["total_cost"] = (
+        h2_links["capital_cost_total"]
+        + h2_links["marginal_cost_total"]
+        + h2_links["electricity_cost"]
+    )
+
+    h2_links["lcoh_aud_per_mwh"] = h2_links["total_cost"] / h2_links["h2_output_mwh"]
+
+    # Convert AUD/MWh_H2 to AUD/kg_H2 using 33 kWh/kg.
+    h2_links["lcoh_aud_per_kg"] = h2_links["lcoh_aud_per_mwh"] * 33.0 / 1000.0
+
+    lcoh_data = h2_links[
+        [
+            "bus0",
+            "bus1",
+            "carrier",
+            "h2_output_mwh",
+            "lcoh_aud_per_kg",
+            "lcoh_aud_per_mwh",
+            "capital_cost_total",
+            "marginal_cost_total",
+            "electricity_cost",
+        ]
+    ].copy()
+
+    lcoh_data = lcoh_data.rename(columns={"bus1": "h2_bus"})
+
+    # Map grid H2 bus back to the physical cluster location.
+    lcoh_data["cluster"] = lcoh_data["h2_bus"].str.replace(" grid H2", "", regex=False)
+
+    lcoh_data = lcoh_data.merge(
+        network.buses[["x", "y"]],
+        left_on="cluster",
+        right_index=True,
+        how="left",
+    )
+
+    lcoh_data = lcoh_data.dropna(subset=["x", "y"])
+
+    lcoh_by_bus = (
+        lcoh_data.groupby("cluster")
+        .apply(
+            lambda df: pd.Series(
+                {
+                    "weighted_lcoh_aud_per_kg": (
+                        df["lcoh_aud_per_kg"] * df["h2_output_mwh"]
+                    ).sum()
+                    / df["h2_output_mwh"].sum(),
+                    "weighted_lcoh_aud_per_mwh": (
+                        df["lcoh_aud_per_mwh"] * df["h2_output_mwh"]
+                    ).sum()
+                    / df["h2_output_mwh"].sum(),
+                    "h2_dispatch_twh": df["h2_output_mwh"].sum() / 1e6,
+                    "h2_dispatch_kt": df["h2_output_mwh"].sum() / 33.0 / 1e3,
+                    "x": df["x"].iloc[0],
+                    "y": df["y"].iloc[0],
+                }
+            )
+        )
+        .reset_index()
+    )
+
+    return lcoh_by_bus, lcoh_data
+
+
+def plot_lcoh_map_by_bus(
+    lcoh_by_bus: pd.DataFrame,
+    shapes: gpd.GeoDataFrame,
+    title: str | None = None,
+    ax=None,
+    vmin: float | None = None,
+    vmax: float | None = None,
+):
+    """Plot production-weighted LCOH by electricity cluster over a map background."""
+    if lcoh_by_bus.empty:
+        return None
+
+    shapes = shapes.to_crs("EPSG:4326")
+
+    if vmin is None:
+        vmin = lcoh_by_bus["weighted_lcoh_aud_per_kg"].quantile(0.05)
+
+    if vmax is None:
+        vmax = lcoh_by_bus["weighted_lcoh_aud_per_kg"].quantile(0.95)
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(5.0, 3.5))
+    else:
+        fig = ax.figure
+
+    shapes.plot(
+        ax=ax,
+        facecolor="whitesmoke",
+        edgecolor="0.7",
+        linewidth=0.5,
+        zorder=1,
+    )
+
+    max_dispatch = lcoh_by_bus["h2_dispatch_kt"].max()
+    if max_dispatch > 0:
+        sizes = 40 + 250 * np.sqrt(lcoh_by_bus["h2_dispatch_kt"] / max_dispatch)
+    else:
+        sizes = 80
+
+    scatter = ax.scatter(
+        lcoh_by_bus["x"],
+        lcoh_by_bus["y"],
+        c=lcoh_by_bus["weighted_lcoh_aud_per_kg"],
+        s=sizes,
+        cmap="RdYlGn_r",
+        vmin=vmin,
+        vmax=vmax,
+        marker="o",
+        linewidths=0,
+        edgecolors="none",
+        alpha=1.0,
+        zorder=5,
+    )
+
+    cbar = fig.colorbar(
+        scatter,
+        ax=ax,
+        shrink=0.75,
+        pad=0.02,
+    )
+
+    cbar.set_label(
+        "Production-weighted LCOH (AUD/kg H2)",
+        fontsize=6,
+    )
+
+    cbar.ax.tick_params(labelsize=6)
+
+    legend_values = [2, 10, 50]
+    legend_handles = []
+
+    for value in legend_values:
+        marker_size = 40 + 250 * np.sqrt(value / max_dispatch)
+
+        legend_handles.append(
+            ax.scatter(
+                [],
+                [],
+                s=marker_size,
+                color="lightgray",
+                edgecolors="gray",
+                linewidths=0.1,
+                label=f"{value:.0f} kt H2/year",
+            )
+        )
+
+    if legend_handles:
+        ax.legend(
+            handles=legend_handles,
+            title="Annual H2 production",
+            loc="lower left",
+            frameon=False,
+            fontsize=6,
+            title_fontsize=6,
+            labelspacing=1.4,
+            borderpad=0.8,
+            handletextpad=1.0,
+        )
+
+    ax.set_xlim(110, 155)
+    ax.set_ylim(-45, -10)
+    ax.axis("off")
+
+    fig.tight_layout()
+
+    return fig

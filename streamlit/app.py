@@ -25,9 +25,11 @@ from results_helpers import (
     compute_dispatch_annual_totals,
     compute_dispatch_by_carrier,
     compute_lcoe_by_bus,
+    compute_lcoh_by_bus,
     get_available_dispatch_categories,
     get_available_result_categories,
     plot_lcoe_map_by_bus,
+    plot_lcoh_map_by_bus,
 )
 
 import streamlit as st
@@ -1132,10 +1134,16 @@ if t_results.open:
                             )
 
                 elif result_view == "Costs":
-                    st.subheader("Electricity LCOE map")
+                    st.subheader("Cost maps")
 
-                    lcoe_run = st.selectbox(
-                        "Select scenario for LCOE map",
+                    cost_map = st.radio(
+                        "Select cost map",
+                        ["Electricity LCOE", "Grid H2 LCOH"],
+                        horizontal=True,
+                    )
+
+                    cost_run = st.selectbox(
+                        "Select scenario for cost map",
                         selected_runs,
                         index=0,
                     )
@@ -1150,50 +1158,94 @@ if t_results.open:
                         / "regions_onshore_elec_s_10.geojson"
                     )
 
-                    n_lcoe = st.session_state.solved_networks[lcoe_run]
+                    n_cost = st.session_state.solved_networks[cost_run]
 
                     try:
                         shapes = gpd.read_file(shape_path)
 
-                        lcoe_by_bus, lcoe_data = compute_lcoe_by_bus(n_lcoe)
+                        if cost_map == "Electricity LCOE":
+                            lcoe_by_bus, lcoe_data = compute_lcoe_by_bus(n_cost)
 
-                        if lcoe_by_bus.empty:
-                            st.warning("No LCOE data found for this scenario.")
-                        else:
-                            fig = plot_lcoe_map_by_bus(
-                                lcoe_by_bus,
-                                shapes,
-                            )
-
-                            st.pyplot(fig, use_container_width=False)
-
-                            st.caption(
-                                "Background regions are shown only for geographic context. "
-                                "Each point represents one PyPSA-Earth electricity cluster. "
-                                "Point colour shows production-weighted electricity LCOE. "
-                                "Point size shows annual electricity generation in the cluster."
-                            )
-
-                            with st.expander(
-                                "Show cluster-level LCOE table",
-                                expanded=False,
-                            ):
-                                st.dataframe(
-                                    lcoe_by_bus.round(2).rename(
-                                        columns={
-                                            "bus": "Cluster",
-                                            "weighted_lcoe": "Production-weighted LCOE (AUD/MWh)",
-                                            "dispatch_twh": "Dispatch (TWh)",
-                                            "x": "Longitude",
-                                            "y": "Latitude",
-                                        }
-                                    ),
-                                    hide_index=True,
-                                    width="stretch",
+                            if lcoe_by_bus.empty:
+                                st.warning("No LCOE data found for this scenario.")
+                            else:
+                                fig = plot_lcoe_map_by_bus(
+                                    lcoe_by_bus,
+                                    shapes,
                                 )
 
+                                st.pyplot(fig, use_container_width=False)
+
+                                st.caption(
+                                    "Background regions are shown only for geographic context. "
+                                    "Each point represents one PyPSA-Earth electricity cluster. "
+                                    "Point colour shows production-weighted electricity LCOE. "
+                                    "Point size shows annual electricity generation in the cluster."
+                                )
+
+                                with st.expander(
+                                    "Show cluster-level LCOE table",
+                                    expanded=False,
+                                ):
+                                    st.dataframe(
+                                        lcoe_by_bus.round(2).rename(
+                                            columns={
+                                                "bus": "Cluster",
+                                                "weighted_lcoe": "Production-weighted LCOE (AUD/MWh)",
+                                                "dispatch_twh": "Dispatch (TWh)",
+                                                "x": "Longitude",
+                                                "y": "Latitude",
+                                            }
+                                        ),
+                                        hide_index=True,
+                                        width="stretch",
+                                    )
+
+                        elif cost_map == "Grid H2 LCOH":
+                            lcoh_by_bus, lcoh_data = compute_lcoh_by_bus(n_cost)
+
+                            if lcoh_by_bus.empty:
+                                st.warning(
+                                    "No grid H2 production found for this scenario."
+                                )
+                            else:
+                                fig = plot_lcoh_map_by_bus(
+                                    lcoh_by_bus,
+                                    shapes,
+                                )
+
+                                st.pyplot(fig, use_container_width=False)
+
+                                st.caption(
+                                    "Background regions are shown only for geographic context. "
+                                    "Each point represents one PyPSA-Earth electricity cluster. "
+                                    "Point colour shows production-weighted LCOH for grid H2. "
+                                    "Point size shows annual grid H2 production in the cluster. "
+                                    "Electricity input costs for electrolysis are valued using the local marginal electricity price from the optimized network."
+                                )
+
+                                with st.expander(
+                                    "Show cluster-level LCOH table",
+                                    expanded=False,
+                                ):
+                                    st.dataframe(
+                                        lcoh_by_bus.round(2).rename(
+                                            columns={
+                                                "cluster": "Cluster",
+                                                "weighted_lcoh_aud_per_kg": "Production-weighted LCOH (AUD/kg H2)",
+                                                "weighted_lcoh_aud_per_mwh": "Production-weighted LCOH (AUD/MWh H2)",
+                                                "h2_dispatch_twh": "Grid H2 production (TWh H2)",
+                                                "h2_dispatch_kt": "Grid H2 production (kt H2)",
+                                                "x": "Longitude",
+                                                "y": "Latitude",
+                                            }
+                                        ),
+                                        hide_index=True,
+                                        width="stretch",
+                                    )
+
                     except Exception as exc:
-                        st.error(f"Could not build LCOE map: {exc}")
+                        st.error(f"Could not build cost map: {exc}")
 
                 st.header("Technical Comparison")
                 st.write(
