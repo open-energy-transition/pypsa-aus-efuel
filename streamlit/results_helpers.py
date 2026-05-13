@@ -3,6 +3,9 @@
 
 from __future__ import annotations
 
+import geopandas as gpd
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import pypsa
 
@@ -514,3 +517,275 @@ def compute_dispatch_annual_totals(
         .rename(columns={"index": "Carrier"})
         .assign(Unit=unit)
     )
+
+
+def compute_lcoe_by_bus(network: pypsa.Network) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Compute plant-level LCOE and production-weighted LCOE by electricity cluster."""
+    snapshot_weights = network.snapshot_weightings.generators
+
+    gen_carriers = {
+        "csp",
+        "solar",
+        "onwind",
+        "offwind-dc",
+        "offwind-ac",
+        "nuclear",
+        "geothermal",
+        "ror",
+        "hydro",
+        "solar rooftop",
+    }
+
+    storage_carriers = {"battery storage", "hydro", "PHS"}
+
+    link_carriers = [
+        "coal",
+        "oil",
+        "OCGT",
+        "CCGT",
+        "biomass",
+        "lignite",
+        "urban central solid biomass CHP",
+        "urban central gas CHP",
+    ]
+
+    electricity_cluster_buses = set(
+        network.buses[network.buses.carrier.isin(["AC", "DC"])].index
+    )
+
+    rows = []
+
+    # Generators.
+    gen = network.generators[network.generators.carrier.isin(gen_carriers)].copy()
+    if not gen.empty:
+        gen_dispatch = network.generators_t.p[gen.index].multiply(
+            snapshot_weights,
+            axis=0,
+        )
+        gen["energy"] = gen_dispatch.sum()
+        gen = gen[(gen.p_nom_opt > 0) & (gen.energy > 0)]
+
+        gen["lcoe"] = (
+            gen.capital_cost * gen.p_nom_opt + gen.marginal_cost * gen.energy
+        ) / gen.energy
+
+        gen["type"] = "generator"
+        rows.append(gen[["bus", "carrier", "lcoe", "type", "energy"]])
+
+    # Storage units.
+    sto = network.storage_units[
+        network.storage_units.carrier.isin(storage_carriers)
+    ].copy()
+
+    if not sto.empty:
+        sto_dispatch = (
+            network.storage_units_t.p[sto.index]
+            .clip(lower=0)
+            .multiply(snapshot_weights, axis=0)
+        )
+        sto["energy"] = sto_dispatch.sum()
+        sto = sto[(sto.p_nom_opt > 0) & (sto.energy > 0)]
+
+        sto["lcoe"] = (
+            sto.capital_cost * sto.p_nom_opt + sto.marginal_cost * sto.energy
+        ) / sto.energy
+
+        sto["type"] = "storage"
+        rows.append(sto[["bus", "carrier", "lcoe", "type", "energy"]])
+
+    # Electricity-producing links.
+    link = network.links[
+        network.links.carrier.isin(link_carriers)
+        & network.links.bus1.isin(electricity_cluster_buses)
+        & (network.links.p_nom_opt > 0)
+    ].copy()
+
+    if not link.empty:
+        link_dispatch = -network.links_t.p1[link.index].clip(upper=0)
+        weighted_link_dispatch = link_dispatch.multiply(snapshot_weights, axis=0)
+        link["energy"] = weighted_link_dispatch.sum()
+
+        fuel_usage = network.links_t.p0[link.index].clip(lower=0)
+        weighted_fuel_usage = fuel_usage.multiply(snapshot_weights, axis=0)
+        link["fuel_usage"] = weighted_fuel_usage.sum()
+
+        link["fuel_cost"] = link.bus0.map(network.generators.marginal_cost)
+
+        hours = float(snapshot_weights.sum())
+        link["CF"] = link["energy"] / (link["p_nom_opt"] * hours)
+
+        def lcoe_link(row):
+            if row["energy"] <= 0:
+                return np.nan
+            if row["carrier"] == "oil":
+                return np.nan
+            if row["CF"] < 0.05:
+                return np.nan
+
+            return (
+                row["capital_cost"] * row["p_nom_opt"]
+                + row["marginal_cost"] * row["fuel_usage"]
+                + row["fuel_cost"] * row["fuel_usage"]
+            ) / row["energy"]
+
+        link["lcoe"] = link.apply(lcoe_link, axis=1)
+        link["type"] = "link"
+
+        rows.append(
+            link[["bus1", "carrier", "lcoe", "type", "energy"]].rename(
+                columns={"bus1": "bus"}
+            )
+        )
+
+    if not rows:
+        return pd.DataFrame(), pd.DataFrame()
+
+    lcoe_data = pd.concat(rows, axis=0).dropna(subset=["bus", "lcoe", "energy"])
+
+    # Keep only the physical electricity buses corresponding to the spatial clusters.
+    # Sectoral buses share the same coordinates but are not separate plotted clusters.
+    lcoe_data = lcoe_data[lcoe_data["bus"].isin(electricity_cluster_buses)]
+
+    if lcoe_data.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
+    lcoe_data = lcoe_data.merge(
+        network.buses[["x", "y"]],
+        left_on="bus",
+        right_index=True,
+    )
+
+    lcoe_by_bus = (
+        lcoe_data.groupby("bus")
+        .apply(
+            lambda df: pd.Series(
+                {
+                    "weighted_lcoe": (df["lcoe"] * df["energy"]).sum()
+                    / df["energy"].sum(),
+                    "dispatch_twh": df["energy"].sum() / 1e6,
+                    "x": df["x"].iloc[0],
+                    "y": df["y"].iloc[0],
+                }
+            )
+        )
+        .reset_index()
+    )
+
+    return lcoe_by_bus, lcoe_data
+
+
+def plot_lcoe_map_by_bus(
+    lcoe_by_bus: pd.DataFrame,
+    shapes: gpd.GeoDataFrame,
+    title: str | None = None,
+    ax=None,
+    vmin: float | None = None,
+    vmax: float | None = None,
+):
+    """Plot production-weighted LCOE by electricity cluster over a map background."""
+    if lcoe_by_bus.empty:
+        return None
+
+    shapes = shapes.to_crs("EPSG:4326")
+
+    if vmin is None:
+        vmin = lcoe_by_bus["weighted_lcoe"].quantile(0.05)
+
+    if vmax is None:
+        vmax = lcoe_by_bus["weighted_lcoe"].quantile(0.95)
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(5.0, 3.5))
+    else:
+        fig = ax.figure
+
+    # Geographic background only.
+    shapes.plot(
+        ax=ax,
+        facecolor="whitesmoke",
+        edgecolor="0.7",
+        linewidth=0.5,
+        zorder=1,
+    )
+
+    max_dispatch = lcoe_by_bus["dispatch_twh"].max()
+    if max_dispatch > 0:
+        sizes = 40 + 250 * np.sqrt(lcoe_by_bus["dispatch_twh"] / max_dispatch)
+    else:
+        sizes = 80
+
+    scatter = ax.scatter(
+        lcoe_by_bus["x"],
+        lcoe_by_bus["y"],
+        c=lcoe_by_bus["weighted_lcoe"],
+        s=sizes,
+        cmap="RdYlGn_r",
+        vmin=vmin,
+        vmax=vmax,
+        marker="o",
+        linewidths=0,
+        edgecolors="none",
+        alpha=1.0,
+        zorder=5,
+    )
+
+    cbar = fig.colorbar(
+        scatter,
+        ax=ax,
+        shrink=0.75,
+        pad=0.02,
+    )
+
+    cbar.set_label(
+        "Generation-weighted LCOE (AUD/MWh)",
+        fontsize=6,
+    )
+
+    cbar.ax.tick_params(labelsize=6)
+
+    # Bubble-size legend for annual generation.
+    legend_values = [
+        lcoe_by_bus["dispatch_twh"].quantile(0.25),
+        lcoe_by_bus["dispatch_twh"].quantile(0.50),
+        lcoe_by_bus["dispatch_twh"].quantile(0.90),
+    ]
+
+    legend_values = [2, 10, 50]
+
+    legend_handles = []
+
+    for value in legend_values:
+        marker_size = 40 + 250 * np.sqrt(value / max_dispatch)
+
+        legend_handles.append(
+            ax.scatter(
+                [],
+                [],
+                s=marker_size,
+                color="lightgray",
+                edgecolors="gray",
+                linewidths=0.1,
+                label=f"{value:.1f} TWh",
+            )
+        )
+
+    if legend_handles:
+        ax.legend(
+            handles=legend_handles,
+            title="Annual generation",
+            loc="lower left",
+            frameon=False,
+            fontsize=6,
+            title_fontsize=6,
+            labelspacing=1.4,
+            borderpad=0.8,
+            handletextpad=1.0,
+        )
+
+    ax.set_xlim(110, 155)
+    ax.set_ylim(-45, -10)
+    ax.axis("off")
+
+    fig.tight_layout()
+
+    return fig

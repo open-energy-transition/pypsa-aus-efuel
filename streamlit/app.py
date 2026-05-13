@@ -11,9 +11,10 @@ to assess the impact of the adjustments on the network's costs.
 import os
 import tempfile
 from importlib.metadata import version
+from pathlib import Path
 
 import altair as alt
-import matplotlib.pyplot as plt
+import geopandas as gpd
 import numpy as np
 import pandas as pd
 import pypsa
@@ -23,8 +24,10 @@ from results_helpers import (
     compute_capacity_by_carrier,
     compute_dispatch_annual_totals,
     compute_dispatch_by_carrier,
+    compute_lcoe_by_bus,
     get_available_dispatch_categories,
     get_available_result_categories,
+    plot_lcoe_map_by_bus,
 )
 
 import streamlit as st
@@ -992,7 +995,7 @@ if t_results.open:
 
             result_view = st.radio(
                 "Select result view",
-                ["Installed capacity", "Dispatch"],
+                ["Installed capacity", "Dispatch", "Costs"],
                 horizontal=True,
             )
 
@@ -1127,6 +1130,70 @@ if t_results.open:
                                 width="stretch",
                                 hide_index=True,
                             )
+
+                elif result_view == "Costs":
+                    st.subheader("Electricity LCOE map")
+
+                    lcoe_run = st.selectbox(
+                        "Select scenario for LCOE map",
+                        selected_runs,
+                        index=0,
+                    )
+
+                    BASE_DIR = Path(__file__).resolve().parent.parent
+
+                    shape_path = (
+                        BASE_DIR
+                        / "pypsa-earth"
+                        / "resources"
+                        / "bus_regions"
+                        / "regions_onshore_elec_s_10.geojson"
+                    )
+
+                    n_lcoe = st.session_state.solved_networks[lcoe_run]
+
+                    try:
+                        shapes = gpd.read_file(shape_path)
+
+                        lcoe_by_bus, lcoe_data = compute_lcoe_by_bus(n_lcoe)
+
+                        if lcoe_by_bus.empty:
+                            st.warning("No LCOE data found for this scenario.")
+                        else:
+                            fig = plot_lcoe_map_by_bus(
+                                lcoe_by_bus,
+                                shapes,
+                            )
+
+                            st.pyplot(fig, use_container_width=False)
+
+                            st.caption(
+                                "Background regions are shown only for geographic context. "
+                                "Each point represents one PyPSA-Earth electricity cluster. "
+                                "Point colour shows production-weighted electricity LCOE. "
+                                "Point size shows annual electricity generation in the cluster."
+                            )
+
+                            with st.expander(
+                                "Show cluster-level LCOE table",
+                                expanded=False,
+                            ):
+                                st.dataframe(
+                                    lcoe_by_bus.round(2).rename(
+                                        columns={
+                                            "bus": "Cluster",
+                                            "weighted_lcoe": "Production-weighted LCOE (AUD/MWh)",
+                                            "dispatch_twh": "Dispatch (TWh)",
+                                            "x": "Longitude",
+                                            "y": "Latitude",
+                                        }
+                                    ),
+                                    hide_index=True,
+                                    width="stretch",
+                                )
+
+                    except Exception as exc:
+                        st.error(f"Could not build LCOE map: {exc}")
 
                 st.header("Technical Comparison")
                 st.write(
