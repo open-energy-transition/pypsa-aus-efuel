@@ -21,6 +21,7 @@ import pypsa
 import requests
 from results_helpers import (
     compute_annual_flow_by_carrier,
+    compute_capacity_by_bus,
     compute_capacity_by_carrier,
     compute_dispatch_annual_totals,
     compute_dispatch_by_carrier,
@@ -30,6 +31,7 @@ from results_helpers import (
     compute_lcoh_by_bus,
     get_available_dispatch_categories,
     get_available_result_categories,
+    plot_capacity_map_by_bus,
     plot_lco_ammonia_map_by_bus,
     plot_lco_methanol_map_by_bus,
     plot_lcoe_map_by_bus,
@@ -119,6 +121,35 @@ MWH_PER_TONNE: dict[str, float] = {
     "e_methanol": 5.54,
 }
 KG_PER_LITER_DIESEL = 0.85
+
+DISPATCH_COLORS = {
+    "Utility solar": "#f9d002",
+    "Rooftop solar": "#ffea80",
+    "Onshore wind": "#235ebc",
+    "Offshore wind AC": "#6895dd",
+    "Offshore wind DC": "#74c6f2",
+    "Run-of-river hydro": "#3dbfb0",
+    "Hydro": "#298c81",
+    "Pumped hydro": "#51dbcc",
+    "Battery": "#b88300",
+    "Biomass": "#4fba41",
+    "Coal": "#000000",
+    "Oil": "#555555",
+    "Gas OCGT": "#db6a00",
+    "Gas CCGT": "#db0000",
+    "Grey ammonia": "#b100ff",
+    "e-ammonia": "#e5abff",
+    "Grey methanol": "#ed0202",
+    "e-methanol": "#ff8080",
+    "SMR": "#666666",
+    "SMR CC": "#0059ff",
+    "DAC": "#eea3ff",
+    "PEM electrolyzer": "#2ecbff",
+    "SOEC": "#f5ff2e",
+    "Alkaline electrolyzer large": "#1b9e77",
+    "Alkaline electrolyzer medium": "#66c2a5",
+    "Alkaline electrolyzer small": "#b2df8a",
+}
 
 load_data: dict[str, dict[str, int | float | str | list[str]]] = {
     "custom_h2": {
@@ -1045,7 +1076,92 @@ if t_results.open:
                             fill_value=0.0,
                         )
 
-                        st.bar_chart(chart_df, y_label=y_label, height=600)
+                        plot_df = chart_df.reset_index().melt(
+                            id_vars="scenario",
+                            var_name="Technology",
+                            value_name="Value",
+                        )
+
+                        tech_totals = plot_df.groupby("Technology")["Value"].sum()
+
+                        shown_techs = [
+                            tech
+                            for tech in DISPATCH_COLORS
+                            if tech in tech_totals.index and tech_totals[tech] > 0
+                        ]
+
+                        chart = (
+                            alt.Chart(plot_df)
+                            .mark_bar()
+                            .encode(
+                                x=alt.X(
+                                    "scenario:N",
+                                    title="Scenario",
+                                ),
+                                y=alt.Y(
+                                    "Value:Q",
+                                    stack="zero",
+                                    title=y_label,
+                                ),
+                                color=alt.Color(
+                                    "Technology:N",
+                                    title="Technology",
+                                    scale=alt.Scale(
+                                        domain=shown_techs,
+                                        range=[DISPATCH_COLORS[t] for t in shown_techs],
+                                    ),
+                                ),
+                                tooltip=[
+                                    alt.Tooltip("scenario:N"),
+                                    alt.Tooltip("Technology:N"),
+                                    alt.Tooltip("Value:Q", format=",.2f"),
+                                ],
+                            )
+                            .properties(height=600)
+                        )
+
+                        st.altair_chart(chart, width="stretch")
+
+                        BASE_DIR = Path(__file__).resolve().parent.parent
+
+                        shape_path = (
+                            BASE_DIR
+                            / "pypsa-earth"
+                            / "resources"
+                            / "bus_regions"
+                            / "regions_onshore_elec_s_10.geojson"
+                        )
+
+                        try:
+                            shapes = gpd.read_file(shape_path)
+                            map_unit = "GW" if category == "Electricity" else "Mtpa"
+
+                            for capacity_run in selected_runs:
+                                st.markdown(f"**{capacity_run}**")
+
+                                capacity_by_bus = compute_capacity_by_bus(
+                                    st.session_state.solved_networks[capacity_run],
+                                    category,
+                                )
+
+                                if capacity_by_bus.empty:
+                                    st.warning(
+                                        f"No mapped capacity data found for {capacity_run}."
+                                    )
+                                    continue
+
+                                fig = plot_capacity_map_by_bus(
+                                    capacity_by_bus,
+                                    shapes,
+                                    DISPATCH_COLORS,
+                                    unit=map_unit,
+                                    title=f"{category} - Installed / Expanded Capacity",
+                                )
+
+                                st.pyplot(fig, use_container_width=False)
+
+                        except Exception as exc:
+                            st.error(f"Could not build capacity map: {exc}")
 
                         table_df = (
                             cap_df.drop(columns=["component"], errors="ignore")
@@ -1087,6 +1203,30 @@ if t_results.open:
                         dispatch_category,
                     )
 
+                    resample_options = [
+                        "Original",
+                        "Daily mean",
+                        "Weekly mean",
+                    ]
+
+                    n_snapshots = len(dispatch_df)
+
+                    # Select default based on simulation length
+                    if n_snapshots <= 100:
+                        default_index = 0  # Original
+
+                    elif n_snapshots <= 500:
+                        default_index = 1  # Daily mean
+
+                    else:
+                        default_index = 2  # Weekly mean
+
+                    dispatch_resample = st.selectbox(
+                        "Resample dispatch visualization",
+                        resample_options,
+                        index=default_index,
+                    )
+
                     y_label = "GW" if dispatch_category == "Electricity" else "kt"
 
                     st.subheader(f"{dispatch_category} - Dispatch")
@@ -1095,13 +1235,28 @@ if t_results.open:
                     if dispatch_df.empty:
                         st.warning(f"No dispatch data found for {dispatch_category}.")
                     else:
-                        plot_df = dispatch_df.reset_index().melt(
-                            id_vars=dispatch_df.index.name or "index",
+                        plot_dispatch_df = dispatch_df.copy()
+
+                        if dispatch_resample == "Daily mean":
+                            plot_dispatch_df = plot_dispatch_df.resample("D").mean()
+                        elif dispatch_resample == "Weekly mean":
+                            plot_dispatch_df = plot_dispatch_df.resample("W").mean()
+
+                        plot_df = plot_dispatch_df.reset_index().melt(
+                            id_vars=plot_dispatch_df.index.name or "index",
                             var_name="Technology",
                             value_name="Value",
                         )
 
-                        time_col = dispatch_df.index.name or "index"
+                        time_col = plot_dispatch_df.index.name or "index"
+
+                        tech_totals = plot_df.groupby("Technology")["Value"].sum()
+
+                        shown_techs = [
+                            tech
+                            for tech in DISPATCH_COLORS
+                            if tech in tech_totals.index and tech_totals[tech] > 0
+                        ]
 
                         chart = (
                             alt.Chart(plot_df)
@@ -1109,7 +1264,14 @@ if t_results.open:
                             .encode(
                                 x=alt.X(f"{time_col}:T", title="Snapshot"),
                                 y=alt.Y("Value:Q", stack="zero", title=y_label),
-                                color=alt.Color("Technology:N", title="Technology"),
+                                color=alt.Color(
+                                    "Technology:N",
+                                    title="Technology",
+                                    scale=alt.Scale(
+                                        domain=shown_techs,
+                                        range=[DISPATCH_COLORS[t] for t in shown_techs],
+                                    ),
+                                ),
                                 tooltip=[
                                     alt.Tooltip(f"{time_col}:T", title="Snapshot"),
                                     alt.Tooltip("Technology:N"),

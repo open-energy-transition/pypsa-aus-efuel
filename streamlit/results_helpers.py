@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pypsa
+from matplotlib.patches import Patch
 
 
 def get_snapshot_weightings(n: pypsa.Network) -> pd.Series:
@@ -83,9 +84,6 @@ def get_category_carriers(category: str) -> dict[str, list[str]]:
                 "offwind-ac",
                 "offwind-dc",
                 "ror",
-                "biomass",
-                "coal",
-                "oil",
             ],
             "links": [
                 "OCGT",
@@ -176,7 +174,7 @@ def compute_capacity_by_carrier(
     networks: dict[str, pypsa.Network],
     category: str,
 ) -> pd.DataFrame:
-    """Compute optimized capacity by exact carrier for selected scenarios."""
+    """Compute optimized output-side capacity by exact carrier for selected scenarios."""
     category_carriers = get_category_carriers(category)
     rows = []
 
@@ -187,9 +185,8 @@ def compute_capacity_by_carrier(
             and not n.generators.empty
             and "p_nom_opt" in n.generators.columns
         ):
-            df = n.generators[n.generators["carrier"].isin(generator_carriers)]
-            df = df.copy()
-            df["capacity_gw"] = df["p_nom_opt"] * df["efficiency"].fillna(1.0) / 1e3
+            df = n.generators[n.generators["carrier"].isin(generator_carriers)].copy()
+            df["capacity_gw"] = df["p_nom_opt"] / 1e3
 
             for carrier, value in df.groupby("carrier")["capacity_gw"].sum().items():
                 rows.append(
@@ -224,19 +221,213 @@ def compute_capacity_by_carrier(
             and not n.storage_units.empty
             and "p_nom_opt" in n.storage_units.columns
         ):
-            df = n.storage_units[n.storage_units["carrier"].isin(storage_unit_carriers)]
-            for carrier, value in df.groupby("carrier")["p_nom_opt"].sum().items():
+            df = n.storage_units[
+                n.storage_units["carrier"].isin(storage_unit_carriers)
+            ].copy()
+            df["capacity_gw"] = df["p_nom_opt"] / 1e3
+
+            for carrier, value in df.groupby("carrier")["capacity_gw"].sum().items():
                 rows.append(
                     {
                         "scenario": scenario,
                         "component": "StorageUnit",
                         "carrier": rename_carrier(carrier),
-                        "value": value / 1e3,
+                        "value": value,
                         "unit": "GW",
                     }
                 )
 
     return pd.DataFrame(rows)
+
+
+def compute_capacity_by_bus(
+    network: pypsa.Network,
+    category: str,
+) -> pd.DataFrame:
+    """Compute optimized installed capacity by cluster and carrier."""
+    category_carriers = get_category_carriers(category)
+    rows = []
+
+    generator_carriers = category_carriers.get("generators", [])
+    if (
+        generator_carriers
+        and not network.generators.empty
+        and "p_nom_opt" in network.generators.columns
+    ):
+        df = network.generators[
+            network.generators["carrier"].isin(generator_carriers)
+        ].copy()
+
+        df["value"] = df["p_nom_opt"] / 1e3
+        df["cluster"] = df["bus"]
+
+        rows.append(df[["cluster", "carrier", "value"]])
+
+    link_carriers = category_carriers.get("links", [])
+    if (
+        link_carriers
+        and not network.links.empty
+        and "p_nom_opt" in network.links.columns
+    ):
+        df = network.links[network.links["carrier"].isin(link_carriers)].copy()
+
+        df["value"] = df["p_nom_opt"] * df["efficiency"].fillna(1.0) / 1e3
+        df["cluster"] = df["bus1"]
+
+        rows.append(df[["cluster", "carrier", "value"]])
+
+    storage_unit_carriers = category_carriers.get("storage_units", [])
+    if (
+        storage_unit_carriers
+        and not network.storage_units.empty
+        and "p_nom_opt" in network.storage_units.columns
+    ):
+        df = network.storage_units[
+            network.storage_units["carrier"].isin(storage_unit_carriers)
+        ].copy()
+
+        df["value"] = df["p_nom_opt"] / 1e3
+        df["cluster"] = df["bus"]
+
+        rows.append(df[["cluster", "carrier", "value"]])
+
+    if not rows:
+        return pd.DataFrame()
+
+    capacity = pd.concat(rows, axis=0)
+    capacity["carrier"] = capacity["carrier"].map(rename_carrier)
+
+    capacity = capacity.groupby(["cluster", "carrier"], as_index=False)["value"].sum()
+
+    capacity = capacity.merge(
+        network.buses[["x", "y"]],
+        left_on="cluster",
+        right_index=True,
+        how="left",
+    )
+
+    capacity = capacity.dropna(subset=["x", "y"])
+    capacity = capacity[capacity["value"] > 0]
+
+    return capacity
+
+
+def plot_capacity_map_by_bus(
+    capacity_by_bus: pd.DataFrame,
+    shapes: gpd.GeoDataFrame,
+    color_map: dict[str, str],
+    unit: str = "GW",
+    title: str | None = None,
+    ax=None,
+):
+    """Plot stacked production-capacity bars by cluster on a map."""
+    if capacity_by_bus.empty:
+        return None
+
+    shapes = shapes.to_crs("EPSG:4326")
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(5.0, 3.5))
+    else:
+        fig = ax.figure
+
+    shapes.plot(
+        ax=ax,
+        facecolor="whitesmoke",
+        edgecolor="0.7",
+        linewidth=0.5,
+        zorder=1,
+    )
+
+    totals = capacity_by_bus.groupby("cluster")["value"].sum()
+    max_total = totals.max()
+
+    if max_total <= 0:
+        return fig
+
+    max_bar_height = 7.0
+    bar_width = 0.75
+
+    carriers = [
+        carrier
+        for carrier in color_map
+        if carrier in capacity_by_bus["carrier"].unique()
+    ]
+
+    for cluster, group in capacity_by_bus.groupby("cluster"):
+        x = group["x"].iloc[0]
+        y = group["y"].iloc[0]
+        bottom = y
+
+        group = group.set_index("carrier")
+
+        for carrier in carriers:
+            if carrier not in group.index:
+                continue
+
+            value = group.loc[carrier, "value"]
+
+            if value <= 0:
+                continue
+
+            height = value / max_total * max_bar_height
+
+            ax.bar(
+                x,
+                height,
+                width=bar_width,
+                bottom=bottom,
+                color=color_map.get(carrier, "gray"),
+                edgecolor="none",
+                align="center",
+                zorder=5,
+            )
+
+            if value >= 15:
+                ax.text(
+                    x + 0.8,
+                    bottom + height / 2,  # center of current segment
+                    f"{value:.1f} {unit}",
+                    fontsize=6,
+                    color=color_map.get(carrier, "black"),
+                    fontweight="bold",
+                    ha="left",
+                    va="center",
+                    zorder=20,
+                )
+
+            bottom += height
+
+    legend_handles = [
+        Patch(
+            facecolor=color_map.get(carrier, "gray"),
+            edgecolor="none",
+            label=carrier,
+        )
+        for carrier in carriers
+    ]
+
+    if legend_handles:
+        ax.legend(
+            handles=legend_handles,
+            title="Technology",
+            loc="center left",
+            bbox_to_anchor=(1.20, 0.5),
+            frameon=False,
+            fontsize=6,
+            title_fontsize=6,
+        )
+
+    ax.set_xlim(110, 155)
+    ax.set_ylim(-45, -10)
+    ax.axis("off")
+
+    if title:
+        ax.set_title(title, fontsize=9, fontweight="bold")
+
+    fig.tight_layout()
+
+    return fig
 
 
 def compute_annual_flow_by_carrier(
@@ -254,16 +445,7 @@ def compute_annual_flow_by_carrier(
             link_carriers = [
                 c
                 for c in n.links.carrier.unique()
-                if any(
-                    k in c.lower()
-                    for k in [
-                        "electroly",
-                        "smr",
-                        "reforming",
-                        "gasification",
-                        "hydrogen",
-                    ]
-                )
+                if any(k in c.lower() for k in ["electroly", "soec"])
             ]
             conversion = mwh_per_tonne["custom_h2"]
 
@@ -368,10 +550,6 @@ def compute_dispatch_by_carrier(
             "offwind-ac",
             "offwind-dc",
             "ror",
-            "biomass",
-            "coal",
-            "lignite",
-            "oil",
         ]
 
         link_carriers = [
@@ -443,16 +621,16 @@ def compute_dispatch_by_carrier(
             "Alkaline electrolyzer small": 33.0,
             "PEM electrolyzer": 33.0,
             "SOEC": 33.0,
-            "SMR": 33.0,
-            "SMR CC": 33.0,
-            "Solid biomass steam reforming": 33.0,
-            "Biomass gasification": 33.0,
-            "Biomass gasification CC": 33.0,
-            "Natural gas steam reforming": 33.0,
-            "Natural gas steam reforming CC": 33.0,
-            "Coal gasification": 33.0,
-            "Coal gasification CC": 33.0,
-            "Heavy oil partial oxidation": 33.0,
+            # "SMR": 33.0,
+            # "SMR CC": 33.0,
+            # "Solid biomass steam reforming": 33.0,
+            # "Biomass gasification": 33.0,
+            # "Biomass gasification CC": 33.0,
+            # "Natural gas steam reforming": 33.0,
+            # "Natural gas steam reforming CC": 33.0,
+            # "Coal gasification": 33.0,
+            # "Coal gasification CC": 33.0,
+            # "Heavy oil partial oxidation": 33.0,
         }
 
     elif category == "Ammonia / Methanol":
