@@ -710,7 +710,7 @@ def plot_lcoe_map_by_bus(
 
     max_dispatch = lcoe_by_bus["dispatch_twh"].max()
     if max_dispatch > 0:
-        sizes = 40 + 250 * np.sqrt(lcoe_by_bus["dispatch_twh"] / max_dispatch)
+        sizes = 200 * np.sqrt(lcoe_by_bus["dispatch_twh"] / max_dispatch)
     else:
         sizes = 80
 
@@ -755,7 +755,7 @@ def plot_lcoe_map_by_bus(
     legend_handles = []
 
     for value in legend_values:
-        marker_size = 40 + 250 * np.sqrt(value / max_dispatch)
+        marker_size = 200 * np.sqrt(value / max_dispatch)
 
         legend_handles.append(
             ax.scatter(
@@ -945,7 +945,7 @@ def plot_lcoh_map_by_bus(
 
     max_dispatch = lcoh_by_bus["h2_dispatch_kt"].max()
     if max_dispatch > 0:
-        sizes = 40 + 250 * np.sqrt(lcoh_by_bus["h2_dispatch_kt"] / max_dispatch)
+        sizes = 200 * np.sqrt(lcoh_by_bus["h2_dispatch_kt"] / max_dispatch)
     else:
         sizes = 80
 
@@ -982,7 +982,7 @@ def plot_lcoh_map_by_bus(
     legend_handles = []
 
     for value in legend_values:
-        marker_size = 40 + 250 * np.sqrt(value / max_dispatch)
+        marker_size = 200 * np.sqrt(value / max_dispatch)
 
         legend_handles.append(
             ax.scatter(
@@ -1016,3 +1016,308 @@ def plot_lcoh_map_by_bus(
     fig.tight_layout()
 
     return fig
+
+
+def compute_lco_product_by_bus(
+    network: pypsa.Network,
+    product_bus_carrier: str,
+    product_label: str,
+    mwh_per_tonne: float,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Compute production-weighted levelized cost for a product by cluster."""
+    snapshot_weights = network.snapshot_weightings.generators
+
+    product_buses = network.buses[network.buses.carrier == product_bus_carrier].index
+
+    product_links = network.links[
+        network.links.bus1.isin(product_buses) & (network.links.p_nom_opt > 0)
+    ].copy()
+
+    if product_links.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
+    output = (-network.links_t.p1[product_links.index].clip(upper=0)).multiply(
+        snapshot_weights,
+        axis=0,
+    )
+
+    product_links["output_mwh"] = output.sum()
+    product_links = product_links[product_links["output_mwh"] > 0]
+
+    if product_links.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
+    total_input_cost = pd.Series(0.0, index=product_links.index)
+
+    bus_cols = [c for c in product_links.columns if c.startswith("bus")]
+
+    for bus_col in bus_cols:
+        bus_nr = bus_col.replace("bus", "")
+        flow_col = f"p{bus_nr}"
+
+        if not hasattr(network.links_t, flow_col):
+            continue
+
+        flows = getattr(network.links_t, flow_col)
+
+        available_links = product_links.index.intersection(flows.columns)
+        if available_links.empty:
+            continue
+
+        input_flows = (
+            flows[available_links]
+            .clip(lower=0)
+            .multiply(
+                snapshot_weights,
+                axis=0,
+            )
+        )
+
+        for link_name in available_links:
+            bus = product_links.at[link_name, bus_col]
+
+            if bus not in network.buses_t.marginal_price.columns:
+                continue
+
+            total_input_cost.loc[link_name] += (
+                input_flows[link_name] * network.buses_t.marginal_price[bus]
+            ).sum()
+
+    product_links["input_cost"] = total_input_cost
+
+    product_links["capital_cost_total"] = (
+        product_links["capital_cost"] * product_links["p_nom_opt"]
+    )
+
+    product_links["marginal_cost_total"] = (
+        product_links["marginal_cost"] * product_links["output_mwh"]
+    )
+
+    product_links["total_cost"] = (
+        product_links["capital_cost_total"]
+        + product_links["marginal_cost_total"]
+        + product_links["input_cost"]
+    )
+
+    product_links["cost_aud_per_mwh"] = (
+        product_links["total_cost"] / product_links["output_mwh"]
+    )
+
+    product_links["cost_aud_per_tonne"] = (
+        product_links["cost_aud_per_mwh"] * mwh_per_tonne
+    )
+
+    product_data = product_links[
+        [
+            "bus1",
+            "carrier",
+            "output_mwh",
+            "cost_aud_per_mwh",
+            "cost_aud_per_tonne",
+            "capital_cost_total",
+            "marginal_cost_total",
+            "input_cost",
+        ]
+    ].copy()
+
+    product_data = product_data.rename(columns={"bus1": "product_bus"})
+
+    product_data["cluster"] = product_data["product_bus"].str.replace(
+        f" {product_bus_carrier}",
+        "",
+        regex=False,
+    )
+
+    product_data = product_data.merge(
+        network.buses[["x", "y"]],
+        left_on="cluster",
+        right_index=True,
+        how="left",
+    )
+
+    product_data = product_data.dropna(subset=["x", "y"])
+
+    product_by_bus = (
+        product_data.groupby("cluster")
+        .apply(
+            lambda df: pd.Series(
+                {
+                    f"weighted_lco_{product_label}_aud_per_tonne": (
+                        df["cost_aud_per_tonne"] * df["output_mwh"]
+                    ).sum()
+                    / df["output_mwh"].sum(),
+                    f"weighted_lco_{product_label}_aud_per_mwh": (
+                        df["cost_aud_per_mwh"] * df["output_mwh"]
+                    ).sum()
+                    / df["output_mwh"].sum(),
+                    "production_twh": df["output_mwh"].sum() / 1e6,
+                    "production_kt": df["output_mwh"].sum() / mwh_per_tonne / 1e3,
+                    "x": df["x"].iloc[0],
+                    "y": df["y"].iloc[0],
+                }
+            )
+        )
+        .reset_index()
+    )
+
+    return product_by_bus, product_data
+
+
+def compute_lco_ammonia_by_bus(network: pypsa.Network):
+    """Compute production-weighted levelized cost for e-ammonia."""
+    return compute_lco_product_by_bus(
+        network=network,
+        product_bus_carrier="e-ammonia",
+        product_label="ammonia",
+        mwh_per_tonne=5.17,
+    )
+
+
+def compute_lco_methanol_by_bus(network: pypsa.Network):
+    """Compute production-weighted levelized cost for e-methanol."""
+    return compute_lco_product_by_bus(
+        network=network,
+        product_bus_carrier="e-methanol",
+        product_label="methanol",
+        mwh_per_tonne=5.54,
+    )
+
+
+def plot_lco_product_map_by_bus(
+    product_by_bus: pd.DataFrame,
+    shapes: gpd.GeoDataFrame,
+    value_col: str,
+    cbar_label: str,
+    legend_title: str,
+    legend_unit: str,
+    title: str | None = None,
+    ax=None,
+    vmin: float | None = None,
+    vmax: float | None = None,
+):
+    """Plot production-weighted product cost by cluster over a map background."""
+    if product_by_bus.empty:
+        return None
+
+    shapes = shapes.to_crs("EPSG:4326")
+
+    if vmin is None:
+        vmin = product_by_bus[value_col].quantile(0.05)
+
+    if vmax is None:
+        vmax = product_by_bus[value_col].quantile(0.95)
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(5.0, 3.5))
+    else:
+        fig = ax.figure
+
+    shapes.plot(
+        ax=ax,
+        facecolor="whitesmoke",
+        edgecolor="0.7",
+        linewidth=0.5,
+        zorder=1,
+    )
+
+    max_dispatch = product_by_bus["production_kt"].max()
+
+    if max_dispatch > 0:
+        sizes = 200 * np.sqrt(product_by_bus["production_kt"] / max_dispatch)
+    else:
+        sizes = 80
+
+    scatter = ax.scatter(
+        product_by_bus["x"],
+        product_by_bus["y"],
+        c=product_by_bus[value_col],
+        s=sizes,
+        cmap="RdYlGn_r",
+        vmin=vmin,
+        vmax=vmax,
+        marker="o",
+        linewidths=0,
+        edgecolors="none",
+        alpha=1.0,
+        zorder=5,
+    )
+
+    cbar = fig.colorbar(
+        scatter,
+        ax=ax,
+        shrink=0.75,
+        pad=0.02,
+    )
+
+    cbar.set_label(
+        cbar_label,
+        fontsize=6,
+    )
+
+    cbar.ax.tick_params(labelsize=6)
+
+    legend_values = [2, 10, 50]
+    legend_handles = []
+
+    for value in legend_values:
+        marker_size = 200 * np.sqrt(value / max_dispatch)
+
+        legend_handles.append(
+            ax.scatter(
+                [],
+                [],
+                s=marker_size,
+                color="lightgray",
+                edgecolors="gray",
+                linewidths=0.1,
+                label=f"{value:.0f} {legend_unit}/year",
+            )
+        )
+
+    if legend_handles:
+        ax.legend(
+            handles=legend_handles,
+            title=legend_title,
+            loc="lower left",
+            frameon=False,
+            fontsize=6,
+            title_fontsize=6,
+            labelspacing=1.4,
+            borderpad=0.8,
+            handletextpad=1.0,
+        )
+
+    ax.set_xlim(110, 155)
+    ax.set_ylim(-45, -10)
+    ax.axis("off")
+
+    if title:
+        ax.set_title(title, fontsize=10)
+
+    fig.tight_layout()
+
+    return fig
+
+
+def plot_lco_ammonia_map_by_bus(ammonia_by_bus, shapes, title=None):
+    return plot_lco_product_map_by_bus(
+        product_by_bus=ammonia_by_bus,
+        shapes=shapes,
+        value_col="weighted_lco_ammonia_aud_per_tonne",
+        cbar_label="Production-weighted LCOA (AUD/t NH3)",
+        legend_title="Annual e-ammonia production",
+        legend_unit="kt NH3",
+        title=title,
+    )
+
+
+def plot_lco_methanol_map_by_bus(methanol_by_bus, shapes, title=None):
+    return plot_lco_product_map_by_bus(
+        product_by_bus=methanol_by_bus,
+        shapes=shapes,
+        value_col="weighted_lco_methanol_aud_per_tonne",
+        cbar_label="Production-weighted LCOMeOH (AUD/t MeOH)",
+        legend_title="Annual e-methanol production",
+        legend_unit="kt MeOH",
+        title=title,
+    )

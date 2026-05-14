@@ -24,10 +24,14 @@ from results_helpers import (
     compute_capacity_by_carrier,
     compute_dispatch_annual_totals,
     compute_dispatch_by_carrier,
+    compute_lco_ammonia_by_bus,
+    compute_lco_methanol_by_bus,
     compute_lcoe_by_bus,
     compute_lcoh_by_bus,
     get_available_dispatch_categories,
     get_available_result_categories,
+    plot_lco_ammonia_map_by_bus,
+    plot_lco_methanol_map_by_bus,
     plot_lcoe_map_by_bus,
     plot_lcoh_map_by_bus,
 )
@@ -1138,7 +1142,12 @@ if t_results.open:
 
                     cost_map = st.radio(
                         "Select cost map",
-                        ["Electricity LCOE", "Grid H2 LCOH"],
+                        [
+                            "Electricity (LCOE)",
+                            "H2 from electrolysis (LCOH)",
+                            "e-Ammonia levelized cost",
+                            "e-Methanol levelized cost",
+                        ],
                         horizontal=True,
                     )
 
@@ -1163,7 +1172,7 @@ if t_results.open:
                     try:
                         shapes = gpd.read_file(shape_path)
 
-                        if cost_map == "Electricity LCOE":
+                        if cost_map == "Electricity (LCOE)":
                             lcoe_by_bus, lcoe_data = compute_lcoe_by_bus(n_cost)
 
                             if lcoe_by_bus.empty:
@@ -1201,7 +1210,7 @@ if t_results.open:
                                         width="stretch",
                                     )
 
-                        elif cost_map == "Grid H2 LCOH":
+                        elif cost_map == "H2 from electrolysis (LCOH)":
                             lcoh_by_bus, lcoh_data = compute_lcoh_by_bus(n_cost)
 
                             if lcoh_by_bus.empty:
@@ -1236,6 +1245,96 @@ if t_results.open:
                                                 "weighted_lcoh_aud_per_mwh": "Production-weighted LCOH (AUD/MWh H2)",
                                                 "h2_dispatch_twh": "Grid H2 production (TWh H2)",
                                                 "h2_dispatch_kt": "Grid H2 production (kt H2)",
+                                                "x": "Longitude",
+                                                "y": "Latitude",
+                                            }
+                                        ),
+                                        hide_index=True,
+                                        width="stretch",
+                                    )
+
+                        elif cost_map == "e-Ammonia levelized cost":
+                            ammonia_by_bus, ammonia_data = compute_lco_ammonia_by_bus(
+                                n_cost
+                            )
+
+                            if ammonia_by_bus.empty:
+                                st.warning(
+                                    "No e-ammonia production found for this scenario."
+                                )
+                            else:
+                                fig = plot_lco_ammonia_map_by_bus(
+                                    ammonia_by_bus,
+                                    shapes,
+                                )
+
+                                st.pyplot(fig, use_container_width=False)
+
+                                st.caption(
+                                    "Background regions are shown only for geographic context. "
+                                    "Each point represents one PyPSA-Earth electricity cluster. "
+                                    "Point colour shows production-weighted levelized cost of e-ammonia. "
+                                    "Point size shows annual e-ammonia production in the cluster. "
+                                    "Input costs are valued using local marginal prices from the optimized network."
+                                )
+
+                                with st.expander(
+                                    "Show cluster-level e-ammonia cost table",
+                                    expanded=False,
+                                ):
+                                    st.dataframe(
+                                        ammonia_by_bus.round(2).rename(
+                                            columns={
+                                                "cluster": "Cluster",
+                                                "weighted_lco_ammonia_aud_per_tonne": "Production-weighted LCOA (AUD/t NH3)",
+                                                "weighted_lco_ammonia_aud_per_mwh": "Production-weighted LCOA (AUD/MWh NH3)",
+                                                "production_twh": "e-ammonia production (TWh)",
+                                                "production_kt": "e-ammonia production (kt NH3)",
+                                                "x": "Longitude",
+                                                "y": "Latitude",
+                                            }
+                                        ),
+                                        hide_index=True,
+                                        width="stretch",
+                                    )
+
+                        elif cost_map == "e-Methanol levelized cost":
+                            methanol_by_bus, methanol_data = (
+                                compute_lco_methanol_by_bus(n_cost)
+                            )
+
+                            if methanol_by_bus.empty:
+                                st.warning(
+                                    "No e-methanol production found for this scenario."
+                                )
+                            else:
+                                fig = plot_lco_methanol_map_by_bus(
+                                    methanol_by_bus,
+                                    shapes,
+                                )
+
+                                st.pyplot(fig, use_container_width=False)
+
+                                st.caption(
+                                    "Background regions are shown only for geographic context. "
+                                    "Each point represents one PyPSA-Earth electricity cluster. "
+                                    "Point colour shows production-weighted levelized cost of e-methanol. "
+                                    "Point size shows annual e-methanol production in the cluster. "
+                                    "Input costs are valued using local marginal prices from the optimized network."
+                                )
+
+                                with st.expander(
+                                    "Show cluster-level e-methanol cost table",
+                                    expanded=False,
+                                ):
+                                    st.dataframe(
+                                        methanol_by_bus.round(2).rename(
+                                            columns={
+                                                "cluster": "Cluster",
+                                                "weighted_lco_methanol_aud_per_tonne": "Production-weighted LCOMeOH (AUD/t MeOH)",
+                                                "weighted_lco_methanol_aud_per_mwh": "Production-weighted LCOMeOH (AUD/MWh MeOH)",
+                                                "production_twh": "e-methanol production (TWh)",
+                                                "production_kt": "e-methanol production (kt MeOH)",
                                                 "x": "Longitude",
                                                 "y": "Latitude",
                                             }
