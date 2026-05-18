@@ -1050,10 +1050,21 @@ if t_results.open:
 
                     if category == "Electricity":
                         cap_df = compute_capacity_by_carrier(
-                            selected_networks, category
+                            selected_networks,
+                            category,
                         )
                         y_label = "GW"
-                        result_title = "Electricity - Installed / Expanded Capacity"
+                        result_title = "Electricity - Installed capacity"
+
+                    elif category == "CO2 capture":
+                        cap_df = compute_annual_flow_by_carrier(
+                            selected_networks,
+                            category,
+                            MWH_PER_TONNE,
+                        )
+                        y_label = "Mtpa"
+                        result_title = "CO2 capture - Annual Capture"
+
                     else:
                         cap_df = compute_annual_flow_by_carrier(
                             selected_networks,
@@ -1061,7 +1072,7 @@ if t_results.open:
                             MWH_PER_TONNE,
                         )
                         y_label = "Mtpa"
-                        result_title = f"{category} - Annual Production / Capture"
+                        result_title = f"{category} - Annual production capacity"
 
                     st.subheader(result_title)
 
@@ -1154,7 +1165,6 @@ if t_results.open:
                                     shapes,
                                     DISPATCH_COLORS,
                                     unit=map_unit,
-                                    title=f"{category} - Installed / Expanded Capacity",
                                 )
 
                                 st.pyplot(fig, use_container_width=False)
