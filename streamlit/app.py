@@ -19,24 +19,7 @@ import numpy as np
 import pandas as pd
 import pypsa
 import requests
-from results_helpers import (
-    compute_annual_flow_by_carrier,
-    compute_capacity_by_bus,
-    compute_capacity_by_carrier,
-    compute_dispatch_annual_totals,
-    compute_dispatch_by_carrier,
-    compute_lco_ammonia_by_bus,
-    compute_lco_methanol_by_bus,
-    compute_lcoe_by_bus,
-    compute_lcoh_by_bus,
-    get_available_dispatch_categories,
-    get_available_result_categories,
-    plot_capacity_map_by_bus,
-    plot_lco_ammonia_map_by_bus,
-    plot_lco_methanol_map_by_bus,
-    plot_lcoe_map_by_bus,
-    plot_lcoh_map_by_bus,
-)
+from results_helpers import *
 
 import streamlit as st
 
@@ -1032,7 +1015,7 @@ if t_results.open:
 
             result_view = st.radio(
                 "Select result view",
-                ["Installed capacity", "Dispatch", "Costs"],
+                ["Installed capacity", "Dispatch", "Commodity costs", "System costs"],
                 horizontal=True,
             )
 
@@ -1308,7 +1291,7 @@ if t_results.open:
                                 hide_index=True,
                             )
 
-                elif result_view == "Costs":
+                elif result_view == "Commodity costs":
                     st.subheader("Cost maps")
 
                     cost_map = st.radio(
@@ -1516,6 +1499,136 @@ if t_results.open:
 
                     except Exception as exc:
                         st.error(f"Could not build cost map: {exc}")
+
+                elif result_view == "System costs":
+
+                    st.subheader("System costs")
+
+                    system_cost_type = st.radio(
+                        "Select system cost type",
+                        [
+                            "Capital expenditure",
+                            "Operational expenditure",
+                        ],
+                        horizontal=True,
+                    )
+
+                    df_system = build_system_cost_table(selected_networks)
+
+                    df_plot = (
+                        df_system[df_system["cost_type"] == system_cost_type]
+                        .groupby(
+                            ["scenario", "macro_category"],
+                            as_index=False,
+                        )["cost_billion"]
+                        .sum()
+                    )
+
+                    categories = [
+                        c
+                        for c in renamed_tech_colors
+                        if c in df_plot["macro_category"].unique()
+                    ]
+
+                    chart = (
+                        alt.Chart(df_plot)
+                        .mark_bar()
+                        .encode(
+                            x=alt.X(
+                                "scenario:N",
+                                title="Scenario",
+                            ),
+                            y=alt.Y(
+                                "cost_billion:Q",
+                                title="Annual system cost (Billion AUD/year)",
+                                stack="zero",
+                            ),
+                            color=alt.Color(
+                                "macro_category:N",
+                                title="Category",
+                                scale=alt.Scale(
+                                    domain=categories,
+                                    range=[renamed_tech_colors[c] for c in categories],
+                                ),
+                            ),
+                            tooltip=[
+                                "scenario",
+                                "macro_category",
+                                alt.Tooltip(
+                                    "cost_billion:Q",
+                                    format=",.2f",
+                                ),
+                            ],
+                        )
+                        .properties(height=600)
+                    )
+
+                    st.altair_chart(chart, width="stretch")
+
+                    st.subheader("Technology-level breakdown")
+
+                    def make_technology_cost_table(df_system, cost_type):
+
+                        category_map = (
+                            df_system[["tech_label", "macro_category"]]
+                            .drop_duplicates()
+                            .set_index("tech_label")["macro_category"]
+                        )
+
+                        table = (
+                            df_system[df_system["cost_type"] == cost_type]
+                            .groupby(
+                                [
+                                    "tech_label",
+                                    "scenario",
+                                ],
+                                as_index=False,
+                            )["cost_billion"]
+                            .sum()
+                            .pivot_table(
+                                index="tech_label",
+                                columns="scenario",
+                                values="cost_billion",
+                                fill_value=0,
+                            )
+                            .round(2)
+                        )
+
+                        table.insert(
+                            0,
+                            "Macro category",
+                            table.index.map(category_map),
+                        )
+
+                        table = table.reset_index().rename(
+                            columns={"tech_label": "Technology"}
+                        )
+
+                        return table
+
+                    capex_detail = make_technology_cost_table(
+                        df_system,
+                        "Capital expenditure",
+                    )
+
+                    opex_detail = make_technology_cost_table(
+                        df_system,
+                        "Operational expenditure",
+                    )
+
+                    st.markdown("**Capital expenditure (Billion AUD/year)**")
+                    st.dataframe(
+                        capex_detail,
+                        width="stretch",
+                        hide_index=True,
+                    )
+
+                    st.markdown("**Operational expenditure (Billion AUD/year)**")
+                    st.dataframe(
+                        opex_detail,
+                        width="stretch",
+                        hide_index=True,
+                    )
 
                 st.header("Technical Comparison")
                 st.write(

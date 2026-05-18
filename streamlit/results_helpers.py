@@ -1515,3 +1515,414 @@ def plot_lco_methanol_map_by_bus(methanol_by_bus, shapes, title=None):
         legend_unit="kt MeOH",
         title=title,
     )
+
+
+# SYSTEM COST CONFIGURATION
+
+rename_tech_capex = {
+    # Wind
+    "Onshore Wind": "Wind",
+    "onwind": "Wind",
+    "Offshore Wind (AC)": "Wind",
+    "offwind-ac": "Wind",
+    "Offshore Wind (DC)": "Wind",
+    "offwind-dc": "Wind",
+    # Solar
+    "Solar": "Solar",
+    "solar": "Solar",
+    "solar rooftop": "Solar",
+    "Csp": "Solar",
+    "csp": "Solar",
+    # Fossil generators
+    "coal": "Fossil generators",
+    "Coal": "Fossil generators",
+    "oil": "Fossil generators",
+    "Oil": "Fossil generators",
+    "gas": "Fossil generators",
+    "CCGT": "Fossil generators",
+    "OCGT": "Fossil generators",
+    "Open-Cycle Gas": "Fossil generators",
+    "Combined-Cycle Gas": "Fossil generators",
+    "urban central gas CHP": "Fossil generators",
+    # Biomass generators
+    "biomass": "Biomass generators",
+    "Biomass": "Biomass generators",
+    "biomass EOP": "Biomass generators",
+    "urban central solid biomass CHP": "Biomass generators",
+    "solid biomass": "Biomass generators",
+    "biogas": "Biomass generators",
+    # Hydro
+    "Run of River": "Hydropower",
+    "ror": "Hydropower",
+    "Pumped Hydro Storage": "Hydropower",
+    "PHS": "Hydropower",
+    "Reservoir & Dam": "Hydropower",
+    "hydro": "Hydropower",
+    # Storage
+    "Battery": "Electricity Storage",
+    "battery": "Electricity Storage",
+    "Battery Storage": "Electricity Storage",
+    "battery storage": "Electricity Storage",
+    "battery charger": "Electricity Storage",
+    "battery discharger": "Electricity Storage",
+    "battery inverter": "Electricity Storage",
+    "home battery": "Electricity Storage",
+    "home battery charger": "Electricity Storage",
+    "home battery discharger": "Electricity Storage",
+    "Li ion": "Electricity Storage",
+    "BEV charger": "Electricity Storage",
+    "grid H2 Store Tank": "Hydrogen Storage",
+    "H2 Store Tank": "Hydrogen Storage",
+    # Transmission
+    "electricity distribution grid": "Power distribution",
+    "AC": "Power transmission",
+    "Ac": "Power transmission",
+    "DC": "Power transmission",
+    "Dc": "Power transmission",
+    "B2B": "Power transmission",
+    "V2G": "Power transmission",
+    "CO2 pipeline": "CO2 transport",
+    "solid biomass transport": "Biomass transport",
+    # Hydrogen and electrolysers
+    "SOEC": "Hydrogen",
+    "PEM electrolyzer": "Hydrogen",
+    "Alkaline electrolyzer large": "Hydrogen",
+    "Alkaline electrolyzer medium": "Hydrogen",
+    "Alkaline electrolyzer small": "Hydrogen",
+    "H2 pipeline": "Hydrogen",
+    "H2 pipeline repurposed": "Hydrogen",
+    "grid H2": "Hydrogen",
+    "H2": "Hydrogen",
+    "grey H2": "Hydrogen",
+    "blue H2": "Hydrogen",
+    "H2 Fuel Cell": "Hydrogen",
+    # Industry
+    "SMR": "Industry",
+    "SMR CC": "Industry CC",
+    "gas for industry": "Industry",
+    "solid biomass for industry": "Industry",
+    "naphtha for industry": "Industry",
+    "industry electricity": "Industry",
+    # e-fuels synthesis
+    "Fischer-Tropsch": "e-fuels synthesis",
+    "Haber-Bosch": "e-fuels synthesis",
+    "grey Haber-Bosch": "e-fuels synthesis",
+    "e Haber-Bosch": "e-fuels synthesis",
+    "Sabatier": "e-fuels synthesis",
+    "grey methanol synthesis": "e-fuels synthesis",
+    "e-methanol synthesis": "e-fuels synthesis",
+    "methanol": "e-fuels synthesis",
+    "e-methanol": "e-fuels synthesis",
+    "ammonia": "e-fuels synthesis",
+    "e-ammonia": "e-fuels synthesis",
+    "grey-ammonia": "e-fuels synthesis",
+    "grey-methanol": "e-fuels synthesis",
+    # Carbon capture/storage/emissions
+    "DAC": "DAC",
+    "co2 stored": "CO2 Storage",
+    "buffer co2 storage steel tank": "CO2 Storage",
+    "buffer biogenic co2 storage steel tank": "CO2 Storage",
+    "biogenic co2 storage steel tank": "CO2 Storage",
+    "co2 geological sequestration": "CO2 Storage",
+    "co2 storage steel tank": "CO2 Storage",
+    "industry coal emissions": "Emissions",
+    "industry oil emissions": "Emissions",
+    "process emissions": "Emissions",
+    "process emissions CC": "Emissions",
+    "co2": "Emissions",
+    # Other generators
+    "Nuclear": "Nuclear",
+    "nuclear": "Nuclear",
+    "Geothermal": "Geothermal",
+    "geothermal": "Geothermal",
+    # Demand
+    "custom H2 demand supply": "End-uses",
+    # Fallback
+    "-": "Others",
+}
+
+rename_tech_opex = {
+    **rename_tech_capex,
+    # Wind
+    "Onshore Wind": "Wind (incl. tax credits)",
+    "onwind": "Wind (incl. tax credits)",
+    "Offshore Wind (AC)": "Wind (incl. tax credits)",
+    "offwind-ac": "Wind (incl. tax credits)",
+    "Offshore Wind (DC)": "Wind (incl. tax credits)",
+    "offwind-dc": "Wind (incl. tax credits)",
+    # Solar
+    "Solar": "Solar (incl. tax credits)",
+    "solar": "Solar (incl. tax credits)",
+    "solar rooftop": "Solar (incl. tax credits)",
+    "Csp": "Solar (incl. tax credits)",
+    "csp": "Solar (incl. tax credits)",
+    # Fossil fuels
+    "coal": "Fossil fuels",
+    "Coal": "Fossil fuels",
+    "gas": "Fossil fuels",
+    "oil": "Fossil fuels",
+    "Oil": "Fossil fuels",
+    "CCGT": "Fossil fuels",
+    "OCGT": "Fossil fuels",
+    "Open-Cycle Gas": "Fossil fuels",
+    "Combined-Cycle Gas": "Fossil fuels",
+    "urban central gas CHP": "Fossil fuels",
+    # Biomass fuels
+    "biomass": "Biomass fuels",
+    "Biomass": "Biomass fuels",
+    "biomass EOP": "Biomass fuels",
+    "solid biomass": "Biomass fuels",
+    "biogas": "Biomass fuels",
+    "urban central solid biomass CHP": "Biomass fuels",
+    # Hydro
+    "Run of River": "Hydropower (incl. tax credits)",
+    "ror": "Hydropower (incl. tax credits)",
+    "Pumped Hydro Storage": "Hydropower (incl. tax credits)",
+    "PHS": "Hydropower (incl. tax credits)",
+    "Reservoir & Dam": "Hydropower (incl. tax credits)",
+    "hydro": "Hydropower (incl. tax credits)",
+    # Nuclear/geothermal
+    "Nuclear": "Nuclear (incl. tax credits)",
+    "nuclear": "Nuclear (incl. tax credits)",
+    "Geothermal": "Geothermal (incl. tax credits)",
+    "geothermal": "Geothermal (incl. tax credits)",
+    # Hydrogen
+    "SMR": "Hydrogen (incl. tax credits)",
+    "SMR CC": "Hydrogen (incl. tax credits)",
+    "SOEC": "Hydrogen (incl. tax credits)",
+    "PEM electrolyzer": "Hydrogen (incl. tax credits)",
+    "Alkaline electrolyzer large": "Hydrogen (incl. tax credits)",
+    "Alkaline electrolyzer medium": "Hydrogen (incl. tax credits)",
+    "Alkaline electrolyzer small": "Hydrogen (incl. tax credits)",
+    "H2 pipeline": "Hydrogen (incl. tax credits)",
+    "H2 pipeline repurposed": "Hydrogen (incl. tax credits)",
+    "grid H2": "Hydrogen (incl. tax credits)",
+    "H2": "Hydrogen (incl. tax credits)",
+    "grey H2": "Hydrogen (incl. tax credits)",
+    "blue H2": "Hydrogen (incl. tax credits)",
+    "H2 Fuel Cell": "Hydrogen (incl. tax credits)",
+}
+
+renamed_tech_colors = {
+    "Power & heat generation": "#ffdd57",
+    "Storage": "#fffd94",
+    "Industry": "#9467bd",
+    "DAC": "#eea3ff",
+    "Transmission & distribution": "#cda434",
+    "Emissions": "#7f7f7f",
+    "Hydrogen & e-fuels": "#1f77b4",
+    "Biofuels synthesis": "#66c2a5",
+    "End-uses": "#5e3b34",
+    "Others": "#c7c7c7",
+}
+
+categories_capex = {
+    "Fossil generators": "Power & heat generation",
+    "Biomass generators": "Power & heat generation",
+    "Hydropower": "Power & heat generation",
+    "Nuclear": "Power & heat generation",
+    "Geothermal": "Power & heat generation",
+    "Wind": "Power & heat generation",
+    "Solar": "Power & heat generation",
+    "Heating": "Power & heat generation",
+    "Electricity Storage": "Storage",
+    "CO2 Storage": "Storage",
+    "Hydrogen Storage": "Storage",
+    "Industry": "Industry",
+    "Industry CC": "Industry",
+    "DAC": "DAC",
+    "Power transmission": "Transmission & distribution",
+    "Power distribution": "Transmission & distribution",
+    "CO2 transport": "Transmission & distribution",
+    "Biomass transport": "Transmission & distribution",
+    "Emissions": "Emissions",
+    "Hydrogen": "Hydrogen & e-fuels",
+    "e-fuels synthesis": "Hydrogen & e-fuels",
+    "Biofuels synthesis": "Biofuels synthesis",
+    "End-uses": "End-uses",
+    "Others": "Others",
+}
+
+categories_opex = {
+    "Fossil fuels (end uses)": "End-uses",
+    "Biomass fuels (end uses)": "End-uses",
+    "Fossil fuels": "Power & heat generation",
+    "Biomass fuels": "Power & heat generation",
+    "Hydropower (incl. tax credits)": "Power & heat generation",
+    "Nuclear (incl. tax credits)": "Power & heat generation",
+    "Geothermal (incl. tax credits)": "Power & heat generation",
+    "Solar (incl. tax credits)": "Power & heat generation",
+    "Wind (incl. tax credits)": "Power & heat generation",
+    "Heating": "Power & heat generation",
+    "Industry": "Industry",
+    "Industry CC": "Industry",
+    "Electricity Storage": "Storage",
+    "CO2 Storage": "Storage",
+    "Hydrogen Storage": "Storage",
+    "DAC": "DAC",
+    "Power transmission": "Transmission & distribution",
+    "Power distribution": "Transmission & distribution",
+    "CO2 transport": "Transmission & distribution",
+    "Biomass transport": "Transmission & distribution",
+    "Emissions": "Emissions",
+    "Hydrogen (incl. tax credits)": "Hydrogen & e-fuels",
+    "e-fuels synthesis": "Hydrogen & e-fuels",
+    "Biofuels synthesis": "Biofuels synthesis",
+    "End-uses": "End-uses",
+    "Others": "Others",
+}
+
+
+def assign_macro_category(row, categories_capex, categories_opex):
+    if row["cost_type"] == "Capital expenditure":
+        return categories_capex.get(row["tech_label"], "Others")
+
+    if row["cost_type"] == "Operational expenditure":
+        return categories_opex.get(row["tech_label"], "Others")
+
+    return "Others"
+
+
+def compute_system_costs(network, rename_capex, rename_opex, name_tag):
+    """
+    Compute CAPEX and OPEX including input costs.
+    """
+
+    costs_raw = network.statistics()[["Capital Expenditure", "Operational Expenditure"]]
+
+    # CAPEX
+    capex_raw = costs_raw[["Capital Expenditure"]].reset_index()
+
+    carrier_col = "carrier" if "carrier" in capex_raw.columns else capex_raw.columns[1]
+
+    capex_raw["tech_label"] = (
+        capex_raw[carrier_col].map(rename_capex).fillna(capex_raw[carrier_col])
+    )
+
+    capex_grouped = (
+        capex_raw.groupby("tech_label", as_index=False)
+        .agg({"Capital Expenditure": "sum"})
+        .rename(columns={"Capital Expenditure": "cost_billion"})
+    )
+
+    capex_grouped["cost_billion"] /= 1e9
+    capex_grouped["cost_type"] = "Capital expenditure"
+    capex_grouped["scenario"] = name_tag
+
+    # OPEX
+    opex_raw = costs_raw[["Operational Expenditure"]].reset_index()
+
+    carrier_col = "carrier" if "carrier" in opex_raw.columns else opex_raw.columns[1]
+
+    opex_raw["tech_label"] = (
+        opex_raw[carrier_col].map(rename_opex).fillna(opex_raw[carrier_col])
+    )
+
+    opex_grouped = (
+        opex_raw.groupby("tech_label", as_index=False)
+        .agg({"Operational Expenditure": "sum"})
+        .rename(columns={"Operational Expenditure": "cost_billion"})
+    )
+
+    opex_grouped["cost_billion"] /= 1e9
+    opex_grouped["cost_type"] = "Operational expenditure"
+    opex_grouped["scenario"] = name_tag
+
+    # EXTRA INPUT OPEX
+    if "objective" in network.snapshot_weightings.columns:
+        w = network.snapshot_weightings["objective"]
+    else:
+        w = network.snapshot_weightings["generators"]
+
+    bus_cols = [c for c in network.links.columns if c.startswith("bus")]
+
+    results_extra = []
+
+    for link_id, row in network.links.iterrows():
+        tech = row["carrier"]
+
+        for bcol in bus_cols:
+            bus = row[bcol]
+
+            if pd.isna(bus):
+                continue
+
+            if bus not in network.buses_t.marginal_price.columns:
+                continue
+
+            idx = bcol[3:]
+            pcol = f"p{idx}"
+
+            if pcol not in network.links_t:
+                continue
+
+            if link_id not in network.links_t[pcol]:
+                continue
+
+            flow_ts = network.links_t[pcol][link_id].clip(lower=0)
+
+            if flow_ts.abs().sum() <= 0:
+                continue
+
+            prices = network.buses_t.marginal_price[bus]
+            fuel_cost = (flow_ts * prices * w).sum()
+
+            if fuel_cost <= 0:
+                continue
+
+            results_extra.append(
+                {
+                    "tech_label": rename_opex.get(tech, tech),
+                    "cost_billion": fuel_cost / 1e9,
+                    "cost_type": "Operational expenditure",
+                    "scenario": name_tag,
+                }
+            )
+
+    extra_df = pd.DataFrame(results_extra)
+
+    df_all = pd.concat(
+        [capex_grouped, opex_grouped, extra_df],
+        ignore_index=True,
+    )
+
+    return df_all
+
+
+def build_system_cost_table(networks):
+    """
+    Build aggregated system cost table across scenarios.
+    """
+
+    all_costs = []
+
+    for name_tag, network in networks.items():
+        df = compute_system_costs(
+            network=network,
+            rename_capex=rename_tech_capex,
+            rename_opex=rename_tech_opex,
+            name_tag=name_tag,
+        )
+
+        all_costs.append(df)
+
+    df_all = pd.concat(all_costs, ignore_index=True)
+
+    df_all["tech_label"] = (
+        df_all["tech_label"]
+        .astype(str)
+        .str.replace(r"\s+", " ", regex=True)
+        .str.replace(r"\xa0", " ", regex=True)
+        .str.strip()
+    )
+
+    df_all["macro_category"] = df_all.apply(
+        lambda row: assign_macro_category(
+            row,
+            categories_capex,
+            categories_opex,
+        ),
+        axis=1,
+    )
+
+    return df_all
