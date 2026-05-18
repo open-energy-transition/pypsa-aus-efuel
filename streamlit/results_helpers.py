@@ -107,13 +107,11 @@ def get_category_carriers(category: str) -> dict[str, list[str]]:
         },
         "Hydrogen": {
             "links": [
-                "grid H2",
-                "grey H2",
-                "blue H2",
-                "H2 Fuel Cell",
-                "H2 pipeline",
-                "H2 pipeline repurposed",
-                "H2 Electrolysis",
+                "Alkaline electrolyzer small",
+                "Alkaline electrolyzer medium",
+                "Alkaline electrolyzer large",
+                "SOEC",
+                "PEM electrolyzer",
             ],
             "stores": [
                 "H2",
@@ -244,7 +242,7 @@ def compute_capacity_by_bus(
     network: pypsa.Network,
     category: str,
 ) -> pd.DataFrame:
-    """Compute optimized installed capacity by cluster and carrier."""
+    """Compute optimized installed/output capacity by physical cluster and carrier."""
     category_carriers = get_category_carriers(category)
     rows = []
 
@@ -297,7 +295,20 @@ def compute_capacity_by_bus(
     capacity = pd.concat(rows, axis=0)
     capacity["carrier"] = capacity["carrier"].map(rename_carrier)
 
-    capacity = capacity.groupby(["cluster", "carrier"], as_index=False)["value"].sum()
+    capacity["plot_cluster"] = (
+        capacity["cluster"]
+        .str.replace(" grey-ammonia", "", regex=False)
+        .str.replace(" e-ammonia", "", regex=False)
+        .str.replace(" grey-methanol", "", regex=False)
+        .str.replace(" e-methanol", "", regex=False)
+        .str.replace(" grid H2", "", regex=False)
+    )
+
+    capacity = (
+        capacity.groupby(["plot_cluster", "carrier"], as_index=False)["value"]
+        .sum()
+        .rename(columns={"plot_cluster": "cluster"})
+    )
 
     capacity = capacity.merge(
         network.buses[["x", "y"]],
@@ -345,8 +356,9 @@ def plot_capacity_map_by_bus(
     if max_total <= 0:
         return fig
 
-    max_bar_height = 7.0
+    max_bar_height = 8.0
     bar_width = 0.75
+    label_threshold = 15.0 if unit == "GW" else 0.1
 
     carriers = [
         carrier
@@ -359,7 +371,9 @@ def plot_capacity_map_by_bus(
         y = group["y"].iloc[0]
         bottom = y
 
-        group = group.set_index("carrier")
+        group = (
+            group.groupby("carrier", as_index=False)["value"].sum().set_index("carrier")
+        )
 
         for carrier in carriers:
             if carrier not in group.index:
@@ -370,7 +384,9 @@ def plot_capacity_map_by_bus(
             if value <= 0:
                 continue
 
-            height = value / max_total * max_bar_height
+            scale_factor = 1.0 if unit == "GW" else 0.55
+
+            height = value / max_total * max_bar_height * scale_factor
 
             ax.bar(
                 x,
@@ -383,10 +399,10 @@ def plot_capacity_map_by_bus(
                 zorder=5,
             )
 
-            if value >= 15:
+            if value >= label_threshold:
                 ax.text(
                     x + 0.8,
-                    bottom + height / 2,  # center of current segment
+                    bottom + height / 2,
                     f"{value:.1f} {unit}",
                     fontsize=6,
                     color=color_map.get(carrier, "black"),
