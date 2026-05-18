@@ -1122,13 +1122,12 @@ if t_results.open:
 
                         st.altair_chart(chart, width="stretch")
 
-                        BASE_DIR = Path(__file__).resolve().parent.parent
+                        APP_DIR = Path(__file__).resolve().parent
 
                         shape_path = (
-                            BASE_DIR
-                            / "pypsa-earth"
-                            / "resources"
-                            / "bus_regions"
+                            APP_DIR
+                            / "data"
+                            / "shapes"
                             / "regions_onshore_elec_s_10.geojson"
                         )
 
