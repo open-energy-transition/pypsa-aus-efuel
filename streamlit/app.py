@@ -11,20 +11,31 @@ to assess the impact of the adjustments on the network's costs.
 import os
 import tempfile
 from importlib.metadata import version
+from pathlib import Path
 
 import altair as alt
-import matplotlib.pyplot as plt
+import geopandas as gpd
 import numpy as np
 import pandas as pd
 import pypsa
 import requests
 from results_helpers import (
     compute_annual_flow_by_carrier,
+    compute_capacity_by_bus,
     compute_capacity_by_carrier,
     compute_dispatch_annual_totals,
     compute_dispatch_by_carrier,
+    compute_lco_ammonia_by_bus,
+    compute_lco_methanol_by_bus,
+    compute_lcoe_by_bus,
+    compute_lcoh_by_bus,
     get_available_dispatch_categories,
     get_available_result_categories,
+    plot_capacity_map_by_bus,
+    plot_lco_ammonia_map_by_bus,
+    plot_lco_methanol_map_by_bus,
+    plot_lcoe_map_by_bus,
+    plot_lcoh_map_by_bus,
 )
 
 import streamlit as st
@@ -110,6 +121,56 @@ MWH_PER_TONNE: dict[str, float] = {
     "e_methanol": 5.54,
 }
 KG_PER_LITER_DIESEL = 0.85
+T_PER_GJ_DIESEL = 42.8 # or MT per PJ
+
+# ----- diesel / methanol demand
+# source: Department of Climate Change, Energy, the Environment and Water, Australian Energy Statistics, Table F, August 2025
+# last available data for 2023-24
+sectors: dict[str, float] = { 
+    'Mining': { 'demand': 299.0 / T_PER_GJ_DIESEL, 'e-share': 0.70 },
+    'Transport': { 'demand': 765.2 / T_PER_GJ_DIESEL, 'e-share': 0.70 },
+    'Agriculture': { 'demand': 88.8 / T_PER_GJ_DIESEL, 'e-share': 0.70 },
+    'Manufacturing': { 'demand': 13.9 / T_PER_GJ_DIESEL, 'e-share': 0.70 },
+    'Construction': { 'demand': 26.5 / T_PER_GJ_DIESEL, 'e-share': 0.70 },
+    'Commercial Services': { 'demand': 32.1 / T_PER_GJ_DIESEL, 'e-share': 0.70 },
+}
+
+# ----- fertlizer demand
+fertilizeres: dict[str, float] = { 
+    'Urea': { 'demand': 3.8, 'e-share': 0.00, 'ammonia_equiv': 0.57 },
+    'Ammonia': { 'demand': 0.1, 'e-share': 0.00, 'ammonia_equiv': 1.00 },
+    'MAP': { 'demand': 0.7, 'e-share': 0.00, 'ammonia_equiv': 0.15 },
+    'DAP': { 'demand': 0.6, 'e-share': 0.00, 'ammonia_equiv': 0.26 },
+}
+
+DISPATCH_COLORS = {
+    "Utility solar": "#f9d002",
+    "Rooftop solar": "#ffea80",
+    "Onshore wind": "#235ebc",
+    "Offshore wind AC": "#6895dd",
+    "Offshore wind DC": "#74c6f2",
+    "Run-of-river hydro": "#3dbfb0",
+    "Hydro": "#298c81",
+    "Pumped hydro": "#51dbcc",
+    "Battery": "#b88300",
+    "Biomass": "#4fba41",
+    "Coal": "#000000",
+    "Oil": "#555555",
+    "Gas OCGT": "#db6a00",
+    "Gas CCGT": "#db0000",
+    "Grey ammonia": "#b100ff",
+    "e-ammonia": "#e5abff",
+    "Grey methanol": "#ed0202",
+    "e-methanol": "#ff8080",
+    "SMR": "#666666",
+    "SMR CC": "#0059ff",
+    "DAC": "#eea3ff",
+    "PEM electrolyzer": "#2ecbff",
+    "SOEC": "#f5ff2e",
+    "Alkaline electrolyzer large": "#1b9e77",
+    "Alkaline electrolyzer medium": "#66c2a5",
+    "Alkaline electrolyzer small": "#b2df8a",
+}
 
 load_data: dict[str, dict[str, int | float | str | list[str]]] = {
     "custom_h2": {
@@ -143,7 +204,7 @@ load_data: dict[str, dict[str, int | float | str | list[str]]] = {
     "e_methanol": {
         "multiplier": 1,
         "label": "e-methanol",
-        "cost": 700,
+        "cost": 1000,
         "carriers": ["e-methanol"],
         "loads": [],
     },
@@ -341,6 +402,10 @@ if "solved_networks" not in st.session_state:
     st.session_state.solved_networks = {}
 if "scenario_metadata" not in st.session_state:
     st.session_state.scenario_metadata = {}
+if "new_demand_meoh" not in st.session_state:
+    st.session_state.new_demand_meoh = None
+if "new_demand_nh3" not in st.session_state:
+    st.session_state.new_demand_nh3 = None
 
 
 # --- SIDEBAR ---
@@ -458,13 +523,223 @@ if t_welcome.open:
             """
             Use the sidebar to load your network and set project targets. Then, navigate through the tabs to manage different aspects of your project (economic and demand parameters).
 
-            In 2025, Australia's **Diesel** consumption was about 32 bn liter or 27.2 Mtpa (million ton per annum). About 85% (or more than 23 Mtpa) needed to be imported. Assuming AUD 3/liter, this makes more than AUD ~80 bn of import costs every year. A historical growth rate of 5-10%/year has been observed and is expected going forward.
-            **Ammonia** consumption was about 2 Mtpa, where about 50% was used in agriculture, 35% in mining and explosives, and the rest in industry and chemicals.
-            While short distance truck transport and a significant share of mining might be replaced by electric vehicles, long distance transport via truck and train likely still rely on liquid fuels for the foreseeable future.
-
-            **10% (~2.3 Mtpa or 2.7 million liters) diesel replacement would save AUD ~8 bn per year in import costs, which could be used to invest in local production, local renewable energy and local employment instead.**
+            Choose Demand Splits, Electrification Share, and Domestic Share requirements to be used.
             """
         )
+
+        # ----- sectors
+        with st.expander("Demand Split Parameters for Diesel / Methanol", expanded=False):
+
+            col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(8, vertical_alignment="top")
+            col1.write("**Sector**")
+            col2.write("**Historic Demand (MTPA)**")
+            col3.write("**Electrified Share (%)**")
+            col4.write("**Remaining/Future Demand (MTPA)**")
+            col5.write("**Domestic Grey Supply (MTPA)**")
+            col6.write("**Domestic Grey Share %**")
+            col7.write("**Domestic Total Share %**")
+            col8.write("**e-Methanol Required (MTPA)**")
+
+            old_demand = {}
+            new_demand_meoh = {}
+            new_share = {}
+            total_demand = 0
+            total_remaining_demand = 0
+            for s in sectors:
+                old_demand[s] = sectors[s]['demand']
+                col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(8, vertical_alignment="top")
+                col1.write(f"**{s}**")
+                col2.write(f"{sectors[s]['demand']:.1f} ")
+                with col3:
+                    new_share[s] = st.slider(
+                        label=f"Electrification Share {s}",
+                        label_visibility="collapsed",
+                        min_value=0.0,
+                        max_value=100.0,
+                        step=1.0,
+                        value=sectors[s]['e-share'] * 100,
+                        format="%.0f%%",
+                    )
+
+                with col4:
+                    new_demand_meoh[s] = (old_demand[s] * (1 - new_share[s] / 100))
+                    st.write(f"{new_demand_meoh[s]:.1f}")
+
+                total_demand += sectors[s]['demand']
+                total_remaining_demand += new_demand_meoh[s]
+
+            col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(8, vertical_alignment="top")
+            col1.write("**Total**")
+            col2.write(f"{total_demand:.1f}")
+            total_electrification_share = (total_demand - total_remaining_demand) / total_demand
+            col3.slider(
+                        label=f"Electrification Share {s}",
+                        label_visibility="collapsed",
+                        min_value=0.0,
+                        max_value=100.0,
+                        step=0.1,
+                        value=total_electrification_share * 100,
+                        format="%.1f%%",
+                        disabled=True,
+                    )
+            col4.write(f"{total_remaining_demand:.1f}")
+
+            with col5:
+                domestic_supply = st.slider(
+                    label="Domestic Supply",
+                    label_visibility="collapsed",
+                    min_value=0.0,
+                    max_value=total_remaining_demand,
+                    step=0.1,
+                    value=4.5,
+                    format="%.1f Mtpa",
+                )
+            with col6:
+                domestic_supply_share = st.slider(
+                    label="Domestic Share",
+                    label_visibility="collapsed",
+                    min_value=0.0,
+                    max_value=100.0,
+                    step=0.1,
+                    value=domestic_supply / total_remaining_demand * 100,
+                    format="%.1f%%",
+                    disabled=True,
+                )
+            with col7:
+                domestic_requested_share = st.slider(
+                    label="Domestic Requested Share",
+                    label_visibility="collapsed",
+                    min_value=domestic_supply_share,
+                    max_value=100.0,
+                    step=1.0,
+                    value=75.0,
+                    format="%.0f%%",
+                )
+            with col8:
+                domestic_requested_demand = st.slider(
+                    label="Methanol Demand",
+                    label_visibility="collapsed",
+                    min_value=0.0,
+                    max_value=30.0,
+                    step=0.1,
+                    value=(domestic_requested_share-domestic_supply_share) /100 * total_remaining_demand,
+                    format="%.1f Mtpa",
+                    disabled=True,
+                )
+
+            st.session_state.new_demand_meoh = domestic_requested_demand
+
+            st.write("**Source**: *Department of Climate Change, Energy, the Environment and Water, Australian Energy Statistics, Table F, August 2025 (Demand numbers 2023-24).*")
+
+        st.write(f"Considered local e-Methanol production: {st.session_state.new_demand_meoh:.2f} MTPA")
+
+        # ----- fertilizeres
+        with st.expander("Demand Split Parameters for Fertilizers / Ammonia", expanded=False):
+
+            col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(8, vertical_alignment="top")
+            col1.write("**Sector**")
+            col2.write("**Historic Demand (MTPA)**")
+            col3.write("**Electrified Share (%)**")
+            col4.write("**Remaining/Future Demand (MTPA)**")
+            col5.write("**Domestic Supply (MTPA)**")
+            col6.write("**Domestic Share %**")
+            col7.write("**Domestic Requested e-Share %**")
+            col8.write("**e-Ammonia Required (MTPA)**")
+
+            old_demand = {}
+            new_demand_nh3 = {}
+            new_share = {}
+            total_demand = 0
+            total_remaining_demand = 0
+            for s in fertilizeres:
+                old_demand[s] = fertilizeres[s]['demand']*fertilizeres[s]['ammonia_equiv']
+                col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(8, vertical_alignment="top")
+                col1.write(f"**{s}**")
+                col2.write(f"{(fertilizeres[s]['demand']*fertilizeres[s]['ammonia_equiv']):.1f} ")
+                with col3:
+                    new_share[s] = st.slider(
+                        label=f"Electrification Share {s}",
+                        label_visibility="collapsed",
+                        min_value=0.0,
+                        max_value=100.0,
+                        step=1.0,
+                        value=fertilizeres[s]['e-share'] * 100,
+                        format="%.0f%%",
+                        disabled=True,
+                    )
+
+                with col4:
+                    new_demand_nh3[s] = (old_demand[s] * (1 - new_share[s] / 100))
+                    st.write(f"{new_demand_nh3[s]:.1f}")
+
+                total_demand += fertilizeres[s]['demand']*fertilizeres[s]['ammonia_equiv']
+                total_remaining_demand += new_demand_nh3[s]
+
+            col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(8, vertical_alignment="top")
+            col1.write("**Total**")
+            col2.write(f"{total_demand:.1f}")
+            total_electrification_share = (total_demand - total_remaining_demand) / total_demand
+            col3.slider(
+                        label=f"Electrification Share {s}",
+                        label_visibility="collapsed",
+                        min_value=0.0,
+                        max_value=100.0,
+                        step=0.1,
+                        value=total_electrification_share * 100,
+                        format="%.1f%%",
+                        disabled=True,
+                    )
+            col4.write(f"{total_remaining_demand:.1f}")
+
+            with col5:
+                domestic_supply = st.slider(
+                    label="Domestic Supply",
+                    label_visibility="collapsed",
+                    min_value=0.0,
+                    max_value=total_remaining_demand,
+                    step=0.1,
+                    value=0.4,
+                    format="%.1f Mtpa",
+                )
+            with col6:
+                domestic_supply_share = st.slider(
+                    label="Domestic Share",
+                    label_visibility="collapsed",
+                    min_value=0.0,
+                    max_value=100.0,
+                    step=0.1,
+                    value=domestic_supply / total_remaining_demand * 100,
+                    format="%.1f%%",
+                    disabled=True,
+                )
+            with col7:
+                domestic_requested_share = st.slider(
+                    label="Domestic Requested e-Share",
+                    label_visibility="collapsed",
+                    min_value=0.0,
+                    max_value=100.0,
+                    step=1.0,
+                    value=75.0,
+                    format="%.0f%%",
+                )
+            with col8:
+                domestic_requested_demand = st.slider(
+                    label="e-Ammonia Demand",
+                    label_visibility="collapsed",
+                    min_value=0.0,
+                    max_value=30.0,
+                    step=0.1,
+                    value=(total_remaining_demand-domestic_supply)*(domestic_requested_share/100), # (domestic_requested_share-domestic_supply_share) /100 * total_remaining_demand,
+                    format="%.1f Mtpa",
+                    disabled=True,
+                )
+
+            st.write("**Source**: *Department of Climate Change, Energy, the Environment and Water, Australian Energy Statistics, Table F, August 2025 (Demand numbers 2023-24).*")
+            st.write("**Applied NH3 equivalents: Urea=0.57, Ammonia=1.00, MAP=0.15, and DAP=0.26**")
+            st.session_state.new_demand_nh3 = domestic_requested_demand
+
+        st.write(f"Considered local e-Ammonia production: {st.session_state.new_demand_nh3:.2f} MTPA")
+
         with st.popover("Project Description", width="stretch", icon="📄"):
             st.write(
                 """
@@ -480,7 +755,7 @@ if t_welcome.open:
 if t_economic.open:
     with t_economic:
         if st.session_state.n is None:
-            st.info("Please load a network ...")
+            st.info("Please load a network via the left sidebar ...")
             st.write(
                 "After loading a network, you are able to adjust the economic parameters."
             )
@@ -627,7 +902,7 @@ if t_economic.open:
 if t_demand.open:
     with t_demand:
         if st.session_state.n is None:
-            st.info("Please load a network ...")
+            st.info("Please load a network via the left sidebar ...")
             st.write(
                 "After loading a network, you are able to adjust the demand parameters."
             )
@@ -671,6 +946,12 @@ if t_demand.open:
 
                     else:
                         old_multiplier[l] = 0.0
+
+                if not st.session_state.new_demand_meoh is None:
+                    old_multiplier['e_methanol'] = st.session_state.new_demand_meoh
+
+                if not st.session_state.new_demand_nh3 is None:
+                    old_multiplier['e_ammonia'] = st.session_state.new_demand_nh3
 
                 if st.session_state.new_cost is None:
                     new_cost = {}
@@ -767,7 +1048,7 @@ if t_demand.open:
 if t_optimization.open:
     with t_optimization:
         if st.session_state.n is None:
-            st.info("Please load a network ...")
+            st.info("Please load a network via the left sidebar ...")
             st.write("After loading a network, you are able to optimize the network.")
         else:
             n = st.session_state.n
@@ -783,14 +1064,14 @@ if t_optimization.open:
             ammonia = demand["grey_ammonia"] + demand["e_ammonia"]
             methanol = demand["grey_methanol"] + demand["e_methanol"]
 
-            with st.expander("Scenario Overview", expanded=True):
+            with st.expander("Scenario Overview", expanded=False):
                 st.write("**Scenario ID**")
                 st.code(scenario_id, language=None)
 
                 st.write("**Scenario Summary**")
                 st.write(scenario_summary)
 
-            with st.expander("Configuration", expanded=True):
+            with st.expander("Configuration", expanded=False):
                 col1, col2, col3, col4 = st.columns(4)
 
                 col1.metric("Country", "Australia")
@@ -844,7 +1125,7 @@ if t_optimization.open:
                     else:
                         weeks = None
 
-            with st.expander("Solver Options", expanded=True):
+            with st.expander("Solver Options", expanded=False):
                 solver_name = st.radio(
                     "Select the solver to use for optimization:",
                     ["highs", "OETC"],
@@ -992,7 +1273,7 @@ if t_results.open:
 
             result_view = st.radio(
                 "Select result view",
-                ["Installed capacity", "Dispatch"],
+                ["Installed capacity", "Dispatch", "Costs"],
                 horizontal=True,
             )
 
@@ -1036,7 +1317,92 @@ if t_results.open:
                             fill_value=0.0,
                         )
 
-                        st.bar_chart(chart_df, y_label=y_label, height=600)
+                        plot_df = chart_df.reset_index().melt(
+                            id_vars="scenario",
+                            var_name="Technology",
+                            value_name="Value",
+                        )
+
+                        tech_totals = plot_df.groupby("Technology")["Value"].sum()
+
+                        shown_techs = [
+                            tech
+                            for tech in DISPATCH_COLORS
+                            if tech in tech_totals.index and tech_totals[tech] > 0
+                        ]
+
+                        chart = (
+                            alt.Chart(plot_df)
+                            .mark_bar()
+                            .encode(
+                                x=alt.X(
+                                    "scenario:N",
+                                    title="Scenario",
+                                ),
+                                y=alt.Y(
+                                    "Value:Q",
+                                    stack="zero",
+                                    title=y_label,
+                                ),
+                                color=alt.Color(
+                                    "Technology:N",
+                                    title="Technology",
+                                    scale=alt.Scale(
+                                        domain=shown_techs,
+                                        range=[DISPATCH_COLORS[t] for t in shown_techs],
+                                    ),
+                                ),
+                                tooltip=[
+                                    alt.Tooltip("scenario:N"),
+                                    alt.Tooltip("Technology:N"),
+                                    alt.Tooltip("Value:Q", format=",.2f"),
+                                ],
+                            )
+                            .properties(height=600)
+                        )
+
+                        st.altair_chart(chart, width="stretch")
+
+                        BASE_DIR = Path(__file__).resolve().parent.parent
+
+                        shape_path = (
+                            BASE_DIR
+                            / "pypsa-earth"
+                            / "resources"
+                            / "bus_regions"
+                            / "regions_onshore_elec_s_10.geojson"
+                        )
+
+                        try:
+                            shapes = gpd.read_file(shape_path)
+                            map_unit = "GW" if category == "Electricity" else "Mtpa"
+
+                            for capacity_run in selected_runs:
+                                st.markdown(f"**{capacity_run}**")
+
+                                capacity_by_bus = compute_capacity_by_bus(
+                                    st.session_state.solved_networks[capacity_run],
+                                    category,
+                                )
+
+                                if capacity_by_bus.empty:
+                                    st.warning(
+                                        f"No mapped capacity data found for {capacity_run}."
+                                    )
+                                    continue
+
+                                fig = plot_capacity_map_by_bus(
+                                    capacity_by_bus,
+                                    shapes,
+                                    DISPATCH_COLORS,
+                                    unit=map_unit,
+                                    title=f"{category} - Installed / Expanded Capacity",
+                                )
+
+                                st.pyplot(fig, use_container_width=False)
+
+                        except Exception as exc:
+                            st.error(f"Could not build capacity map: {exc}")
 
                         table_df = (
                             cap_df.drop(columns=["component"], errors="ignore")
@@ -1078,6 +1444,30 @@ if t_results.open:
                         dispatch_category,
                     )
 
+                    resample_options = [
+                        "Original",
+                        "Daily mean",
+                        "Weekly mean",
+                    ]
+
+                    n_snapshots = len(dispatch_df)
+
+                    # Select default based on simulation length
+                    if n_snapshots <= 100:
+                        default_index = 0  # Original
+
+                    elif n_snapshots <= 500:
+                        default_index = 1  # Daily mean
+
+                    else:
+                        default_index = 2  # Weekly mean
+
+                    dispatch_resample = st.selectbox(
+                        "Resample dispatch visualization",
+                        resample_options,
+                        index=default_index,
+                    )
+
                     y_label = "GW" if dispatch_category == "Electricity" else "kt"
 
                     st.subheader(f"{dispatch_category} - Dispatch")
@@ -1086,13 +1476,28 @@ if t_results.open:
                     if dispatch_df.empty:
                         st.warning(f"No dispatch data found for {dispatch_category}.")
                     else:
-                        plot_df = dispatch_df.reset_index().melt(
-                            id_vars=dispatch_df.index.name or "index",
+                        plot_dispatch_df = dispatch_df.copy()
+
+                        if dispatch_resample == "Daily mean":
+                            plot_dispatch_df = plot_dispatch_df.resample("D").mean()
+                        elif dispatch_resample == "Weekly mean":
+                            plot_dispatch_df = plot_dispatch_df.resample("W").mean()
+
+                        plot_df = plot_dispatch_df.reset_index().melt(
+                            id_vars=plot_dispatch_df.index.name or "index",
                             var_name="Technology",
                             value_name="Value",
                         )
 
-                        time_col = dispatch_df.index.name or "index"
+                        time_col = plot_dispatch_df.index.name or "index"
+
+                        tech_totals = plot_df.groupby("Technology")["Value"].sum()
+
+                        shown_techs = [
+                            tech
+                            for tech in DISPATCH_COLORS
+                            if tech in tech_totals.index and tech_totals[tech] > 0
+                        ]
 
                         chart = (
                             alt.Chart(plot_df)
@@ -1100,7 +1505,14 @@ if t_results.open:
                             .encode(
                                 x=alt.X(f"{time_col}:T", title="Snapshot"),
                                 y=alt.Y("Value:Q", stack="zero", title=y_label),
-                                color=alt.Color("Technology:N", title="Technology"),
+                                color=alt.Color(
+                                    "Technology:N",
+                                    title="Technology",
+                                    scale=alt.Scale(
+                                        domain=shown_techs,
+                                        range=[DISPATCH_COLORS[t] for t in shown_techs],
+                                    ),
+                                ),
                                 tooltip=[
                                     alt.Tooltip(f"{time_col}:T", title="Snapshot"),
                                     alt.Tooltip("Technology:N"),
@@ -1127,6 +1539,215 @@ if t_results.open:
                                 width="stretch",
                                 hide_index=True,
                             )
+
+                elif result_view == "Costs":
+                    st.subheader("Cost maps")
+
+                    cost_map = st.radio(
+                        "Select cost map",
+                        [
+                            "Electricity (LCOE)",
+                            "H2 from electrolysis (LCOH)",
+                            "e-Ammonia levelized cost",
+                            "e-Methanol levelized cost",
+                        ],
+                        horizontal=True,
+                    )
+
+                    cost_run = st.selectbox(
+                        "Select scenario for cost map",
+                        selected_runs,
+                        index=0,
+                    )
+
+                    BASE_DIR = Path(__file__).resolve().parent.parent
+
+                    shape_path = (
+                        BASE_DIR
+                        / "pypsa-earth"
+                        / "resources"
+                        / "bus_regions"
+                        / "regions_onshore_elec_s_10.geojson"
+                    )
+
+                    n_cost = st.session_state.solved_networks[cost_run]
+
+                    try:
+                        shapes = gpd.read_file(shape_path)
+
+                        if cost_map == "Electricity (LCOE)":
+                            lcoe_by_bus, lcoe_data = compute_lcoe_by_bus(n_cost)
+
+                            if lcoe_by_bus.empty:
+                                st.warning("No LCOE data found for this scenario.")
+                            else:
+                                fig = plot_lcoe_map_by_bus(
+                                    lcoe_by_bus,
+                                    shapes,
+                                )
+
+                                st.pyplot(fig, use_container_width=False)
+
+                                st.caption(
+                                    "Background regions are shown only for geographic context. "
+                                    "Each point represents one PyPSA-Earth electricity cluster. "
+                                    "Point colour shows production-weighted electricity LCOE. "
+                                    "Point size shows annual electricity generation in the cluster."
+                                )
+
+                                with st.expander(
+                                    "Show cluster-level LCOE table",
+                                    expanded=False,
+                                ):
+                                    st.dataframe(
+                                        lcoe_by_bus.round(2).rename(
+                                            columns={
+                                                "bus": "Cluster",
+                                                "weighted_lcoe": "Production-weighted LCOE (AUD/MWh)",
+                                                "dispatch_twh": "Dispatch (TWh)",
+                                                "x": "Longitude",
+                                                "y": "Latitude",
+                                            }
+                                        ),
+                                        hide_index=True,
+                                        width="stretch",
+                                    )
+
+                        elif cost_map == "H2 from electrolysis (LCOH)":
+                            lcoh_by_bus, lcoh_data = compute_lcoh_by_bus(n_cost)
+
+                            if lcoh_by_bus.empty:
+                                st.warning(
+                                    "No grid H2 production found for this scenario."
+                                )
+                            else:
+                                fig = plot_lcoh_map_by_bus(
+                                    lcoh_by_bus,
+                                    shapes,
+                                )
+
+                                st.pyplot(fig, use_container_width=False)
+
+                                st.caption(
+                                    "Background regions are shown only for geographic context. "
+                                    "Each point represents one PyPSA-Earth electricity cluster. "
+                                    "Point colour shows production-weighted LCOH for grid H2. "
+                                    "Point size shows annual grid H2 production in the cluster. "
+                                    "Electricity input costs for electrolysis are valued using the local marginal electricity price from the optimized network."
+                                )
+
+                                with st.expander(
+                                    "Show cluster-level LCOH table",
+                                    expanded=False,
+                                ):
+                                    st.dataframe(
+                                        lcoh_by_bus.round(2).rename(
+                                            columns={
+                                                "cluster": "Cluster",
+                                                "weighted_lcoh_aud_per_kg": "Production-weighted LCOH (AUD/kg H2)",
+                                                "weighted_lcoh_aud_per_mwh": "Production-weighted LCOH (AUD/MWh H2)",
+                                                "h2_dispatch_twh": "Grid H2 production (TWh H2)",
+                                                "h2_dispatch_kt": "Grid H2 production (kt H2)",
+                                                "x": "Longitude",
+                                                "y": "Latitude",
+                                            }
+                                        ),
+                                        hide_index=True,
+                                        width="stretch",
+                                    )
+
+                        elif cost_map == "e-Ammonia levelized cost":
+                            ammonia_by_bus, ammonia_data = compute_lco_ammonia_by_bus(
+                                n_cost
+                            )
+
+                            if ammonia_by_bus.empty:
+                                st.warning(
+                                    "No e-ammonia production found for this scenario."
+                                )
+                            else:
+                                fig = plot_lco_ammonia_map_by_bus(
+                                    ammonia_by_bus,
+                                    shapes,
+                                )
+
+                                st.pyplot(fig, use_container_width=False)
+
+                                st.caption(
+                                    "Background regions are shown only for geographic context. "
+                                    "Each point represents one PyPSA-Earth electricity cluster. "
+                                    "Point colour shows production-weighted levelized cost of e-ammonia. "
+                                    "Point size shows annual e-ammonia production in the cluster. "
+                                    "Input costs are valued using local marginal prices from the optimized network."
+                                )
+
+                                with st.expander(
+                                    "Show cluster-level e-ammonia cost table",
+                                    expanded=False,
+                                ):
+                                    st.dataframe(
+                                        ammonia_by_bus.round(2).rename(
+                                            columns={
+                                                "cluster": "Cluster",
+                                                "weighted_lco_ammonia_aud_per_tonne": "Production-weighted LCOA (AUD/t NH3)",
+                                                "weighted_lco_ammonia_aud_per_mwh": "Production-weighted LCOA (AUD/MWh NH3)",
+                                                "production_twh": "e-ammonia production (TWh)",
+                                                "production_kt": "e-ammonia production (kt NH3)",
+                                                "x": "Longitude",
+                                                "y": "Latitude",
+                                            }
+                                        ),
+                                        hide_index=True,
+                                        width="stretch",
+                                    )
+
+                        elif cost_map == "e-Methanol levelized cost":
+                            methanol_by_bus, methanol_data = (
+                                compute_lco_methanol_by_bus(n_cost)
+                            )
+
+                            if methanol_by_bus.empty:
+                                st.warning(
+                                    "No e-methanol production found for this scenario."
+                                )
+                            else:
+                                fig = plot_lco_methanol_map_by_bus(
+                                    methanol_by_bus,
+                                    shapes,
+                                )
+
+                                st.pyplot(fig, use_container_width=False)
+
+                                st.caption(
+                                    "Background regions are shown only for geographic context. "
+                                    "Each point represents one PyPSA-Earth electricity cluster. "
+                                    "Point colour shows production-weighted levelized cost of e-methanol. "
+                                    "Point size shows annual e-methanol production in the cluster. "
+                                    "Input costs are valued using local marginal prices from the optimized network."
+                                )
+
+                                with st.expander(
+                                    "Show cluster-level e-methanol cost table",
+                                    expanded=False,
+                                ):
+                                    st.dataframe(
+                                        methanol_by_bus.round(2).rename(
+                                            columns={
+                                                "cluster": "Cluster",
+                                                "weighted_lco_methanol_aud_per_tonne": "Production-weighted LCOMeOH (AUD/t MeOH)",
+                                                "weighted_lco_methanol_aud_per_mwh": "Production-weighted LCOMeOH (AUD/MWh MeOH)",
+                                                "production_twh": "e-methanol production (TWh)",
+                                                "production_kt": "e-methanol production (kt MeOH)",
+                                                "x": "Longitude",
+                                                "y": "Latitude",
+                                            }
+                                        ),
+                                        hide_index=True,
+                                        width="stretch",
+                                    )
+
+                    except Exception as exc:
+                        st.error(f"Could not build cost map: {exc}")
 
                 st.header("Technical Comparison")
                 st.write(
@@ -1223,7 +1844,7 @@ if t_results.open:
                 )
         else:
             st.info(
-                "Please load a network and run an optimization to see results here ..."
+                "Please load a network via the left sidebar and run an optimization to see results here ..."
             )
             st.write(
                 """
