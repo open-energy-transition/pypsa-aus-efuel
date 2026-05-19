@@ -59,7 +59,7 @@ def investment_cost(
 
 # read current values and provide default values if non exist yet
 default_dr = 7.0
-default_om = 3.0  # %
+default_om = 3.0
 # "lt": lifetime; "cc": capital_cost; "mc": marginal_cost; "dr": discount_rate; "label": label for UI
 tech_data: dict[str, dict[str, int | float | str]] = {
     "solar rooftop": {
@@ -122,25 +122,61 @@ MWH_PER_TONNE: dict[str, float] = {
 }
 KG_PER_LITER_DIESEL = 0.85
 T_PER_GJ_DIESEL = 42.8 # or MT per PJ
+DEFAULT_E_SHARE = 0.50
+DEFAULT_E_SHARE_PRODUCTION = 0.30
 
 # ----- diesel / methanol demand
 # source: Department of Climate Change, Energy, the Environment and Water, Australian Energy Statistics, Table F, August 2025
 # last available data for 2023-24
 sectors: dict[str, float] = { 
-    'Mining': { 'demand': 299.0 / T_PER_GJ_DIESEL, 'e-share': 0.70 },
-    'Transport': { 'demand': 765.2 / T_PER_GJ_DIESEL, 'e-share': 0.70 },
-    'Agriculture': { 'demand': 88.8 / T_PER_GJ_DIESEL, 'e-share': 0.70 },
-    'Manufacturing': { 'demand': 13.9 / T_PER_GJ_DIESEL, 'e-share': 0.70 },
-    'Construction': { 'demand': 26.5 / T_PER_GJ_DIESEL, 'e-share': 0.70 },
-    'Commercial Services': { 'demand': 32.1 / T_PER_GJ_DIESEL, 'e-share': 0.70 },
+    'Mining': {
+        'demand': 299.0 / T_PER_GJ_DIESEL, 
+        'e-share': DEFAULT_E_SHARE
+    },
+    'Transport': {
+        'demand': 765.2 / T_PER_GJ_DIESEL, 
+        'e-share': DEFAULT_E_SHARE
+    },
+    'Agriculture': {
+        'demand': 88.8 / T_PER_GJ_DIESEL,
+        'e-share': DEFAULT_E_SHARE
+    },
+    'Manufacturing': {
+        'demand': 13.9 / T_PER_GJ_DIESEL,
+        'e-share': DEFAULT_E_SHARE
+    },
+    'Construction': {
+        'demand': 26.5 / T_PER_GJ_DIESEL,
+        'e-share':DEFAULT_E_SHARE
+    },
+    'Commercial Services': {
+        'demand': 32.1 / T_PER_GJ_DIESEL,
+        'e-share': DEFAULT_E_SHARE
+    },
 }
 
 # ----- fertlizer demand
 fertilizeres: dict[str, float] = { 
-    'Urea': { 'demand': 3.8, 'e-share': 0.00, 'ammonia_equiv': 0.57 },
-    'Ammonia': { 'demand': 0.1, 'e-share': 0.00, 'ammonia_equiv': 1.00 },
-    'MAP': { 'demand': 0.7, 'e-share': 0.00, 'ammonia_equiv': 0.15 },
-    'DAP': { 'demand': 0.6, 'e-share': 0.00, 'ammonia_equiv': 0.26 },
+    'Urea': {
+        'demand': 3.8,
+        'ammonia_equiv': 0.57,
+        'e-share': 0.00,
+    },
+    'Ammonia': {
+        'demand': 0.1,
+        'ammonia_equiv': 1.00,
+        'e-share': 0.00,
+    },
+    'MAP': {
+        'demand': 0.7,
+        'ammonia_equiv': 0.15,
+        'e-share': 0.00,
+    },
+    'DAP': {
+        'demand': 0.6,
+        'ammonia_equiv': 0.26,
+        'e-share': 0.00, 
+    },
 }
 
 DISPATCH_COLORS = {
@@ -520,25 +556,27 @@ if t_welcome.open:
     with t_welcome:
         st.subheader("Welcome to the PyPSA-AUS-eFuels Interactive Manager!")
         st.write(
-            """
+            f"""
             Use the sidebar to load your network and set project targets. Then, navigate through the tabs to manage different aspects of your project (economic and demand parameters).
 
-            Choose Demand Splits, Electrification Share, and Domestic Share requirements to be used.
+            By default it is assumed that {DEFAULT_E_SHARE*100}% of the diesel demand can be reduced by electrification.
+            Additionally it is assumed that {DEFAULT_E_SHARE_PRODUCTION*100}% of the remaining diesel and ammonia demand shall be covered by local green production.
+            To review and/or adjust the required methanol and/or ammonia demand settings pull down the relevant pull-down box.
             """
         )
 
         # ----- sectors
-        with st.expander("Demand Split Parameters for Diesel / Methanol", expanded=False):
+        with st.expander("Detailed Demand Split Parameters for Diesel / Methanol", expanded=False):
 
             col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(8, vertical_alignment="top")
             col1.write("**Sector**")
-            col2.write("**Historic Demand (MTPA)**")
-            col3.write("**Electrified Share (%)**")
-            col4.write("**Remaining/Future Demand (MTPA)**")
-            col5.write("**Domestic Grey Supply (MTPA)**")
-            col6.write("**Domestic Grey Share %**")
-            col7.write("**Domestic Total Share %**")
-            col8.write("**e-Methanol Required (MTPA)**")
+            col2.write("**Historic Diesel Demand (Mtpa)**")
+            col3.write("**Electrified Demand Share (%)**")
+            col4.write("**Remaining Diesel Demand (Mtpa)**")
+            col5.write("**Domestic Grey Diesel Supply (Mtpa)**")
+            col6.write("**Domestic Grey Diesel Share (%)**")
+            col7.write("**Requested e-Diesel Share (%)**")
+            col8.write("**Required e-Methanol Production (Mtpa)**")
 
             old_demand = {}
             new_demand_meoh = {}
@@ -561,9 +599,8 @@ if t_welcome.open:
                         format="%.0f%%",
                     )
 
-                with col4:
-                    new_demand_meoh[s] = (old_demand[s] * (1 - new_share[s] / 100))
-                    st.write(f"{new_demand_meoh[s]:.1f}")
+                new_demand_meoh[s] = (old_demand[s] * (1 - new_share[s] / 100))
+                col4.write(f"{new_demand_meoh[s]:.1f}")
 
                 total_demand += sectors[s]['demand']
                 total_remaining_demand += new_demand_meoh[s]
@@ -586,7 +623,7 @@ if t_welcome.open:
 
             with col5:
                 domestic_supply = st.slider(
-                    label="Domestic Supply",
+                    label="Domestic Diesel Supply",
                     label_visibility="collapsed",
                     min_value=0.0,
                     max_value=total_remaining_demand,
@@ -596,7 +633,7 @@ if t_welcome.open:
                 )
             with col6:
                 domestic_supply_share = st.slider(
-                    label="Domestic Share",
+                    label="Domestic Diesel Share",
                     label_visibility="collapsed",
                     min_value=0.0,
                     max_value=100.0,
@@ -607,12 +644,12 @@ if t_welcome.open:
                 )
             with col7:
                 domestic_requested_share = st.slider(
-                    label="Domestic Requested Share",
+                    label="Requested Diesel e-Share",
                     label_visibility="collapsed",
-                    min_value=domestic_supply_share,
+                    min_value=0.0,
                     max_value=100.0,
                     step=1.0,
-                    value=75.0,
+                    value=DEFAULT_E_SHARE_PRODUCTION*100,
                     format="%.0f%%",
                 )
             with col8:
@@ -620,9 +657,9 @@ if t_welcome.open:
                     label="Methanol Demand",
                     label_visibility="collapsed",
                     min_value=0.0,
-                    max_value=30.0,
+                    max_value=total_remaining_demand,
                     step=0.1,
-                    value=(domestic_requested_share-domestic_supply_share) /100 * total_remaining_demand,
+                    value=(domestic_requested_share) /100 * ( total_remaining_demand - domestic_supply),
                     format="%.1f Mtpa",
                     disabled=True,
                 )
@@ -631,20 +668,20 @@ if t_welcome.open:
 
             st.write("**Source**: *Department of Climate Change, Energy, the Environment and Water, Australian Energy Statistics, Table F, August 2025 (Demand numbers 2023-24).*")
 
-        st.write(f"Considered local e-Methanol production: {st.session_state.new_demand_meoh:.2f} MTPA")
+        st.write(f"**Considered local e-Methanol production: {st.session_state.new_demand_meoh:.1f} Mtpa**")
 
         # ----- fertilizeres
-        with st.expander("Demand Split Parameters for Fertilizers / Ammonia", expanded=False):
+        with st.expander("Detailed Demand Split Parameters for Fertilizers / Ammonia", expanded=False):
 
             col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(8, vertical_alignment="top")
             col1.write("**Sector**")
-            col2.write("**Historic Demand (MTPA)**")
+            col2.write("**Historic Fertilizer Demand (Mtpa)**")
             col3.write("**Electrified Share (%)**")
-            col4.write("**Remaining/Future Demand (MTPA)**")
-            col5.write("**Domestic Supply (MTPA)**")
-            col6.write("**Domestic Share %**")
-            col7.write("**Domestic Requested e-Share %**")
-            col8.write("**e-Ammonia Required (MTPA)**")
+            col4.write("**Remaining Fertilizer Demand (Mtpa)**")
+            col5.write("**Domestic Grey Ammonia Supply (Mtpa)**")
+            col6.write("**Domestic Grey Ammonia Share (%)**")
+            col7.write("**Requested e-Ammonia Share (%)**")
+            col8.write("**Required e-Ammonia Production (Mtpa)**")
 
             old_demand = {}
             new_demand_nh3 = {}
@@ -693,7 +730,7 @@ if t_welcome.open:
 
             with col5:
                 domestic_supply = st.slider(
-                    label="Domestic Supply",
+                    label="Domestic Ammonia Supply",
                     label_visibility="collapsed",
                     min_value=0.0,
                     max_value=total_remaining_demand,
@@ -703,7 +740,7 @@ if t_welcome.open:
                 )
             with col6:
                 domestic_supply_share = st.slider(
-                    label="Domestic Share",
+                    label="Domestic Ammonia Share",
                     label_visibility="collapsed",
                     min_value=0.0,
                     max_value=100.0,
@@ -714,12 +751,12 @@ if t_welcome.open:
                 )
             with col7:
                 domestic_requested_share = st.slider(
-                    label="Domestic Requested e-Share",
+                    label="Requested Ammonia e-Share",
                     label_visibility="collapsed",
                     min_value=0.0,
                     max_value=100.0,
                     step=1.0,
-                    value=75.0,
+                    value=DEFAULT_E_SHARE_PRODUCTION*100,
                     format="%.0f%%",
                 )
             with col8:
@@ -727,18 +764,17 @@ if t_welcome.open:
                     label="e-Ammonia Demand",
                     label_visibility="collapsed",
                     min_value=0.0,
-                    max_value=30.0,
+                    max_value=total_remaining_demand,
                     step=0.1,
-                    value=(total_remaining_demand-domestic_supply)*(domestic_requested_share/100), # (domestic_requested_share-domestic_supply_share) /100 * total_remaining_demand,
+                    value=(total_remaining_demand-domestic_supply)*(domestic_requested_share/100),
                     format="%.1f Mtpa",
                     disabled=True,
                 )
 
-            st.write("**Source**: *Department of Climate Change, Energy, the Environment and Water, Australian Energy Statistics, Table F, August 2025 (Demand numbers 2023-24).*")
             st.write("**Applied NH3 equivalents: Urea=0.57, Ammonia=1.00, MAP=0.15, and DAP=0.26**")
             st.session_state.new_demand_nh3 = domestic_requested_demand
 
-        st.write(f"Considered local e-Ammonia production: {st.session_state.new_demand_nh3:.2f} MTPA")
+        st.write(f"**Considered local e-Ammonia production: {st.session_state.new_demand_nh3:.1f} Mtpa**")
 
         with st.popover("Project Description", width="stretch", icon="📄"):
             st.write(
@@ -991,9 +1027,9 @@ if t_demand.open:
                             label_visibility="collapsed",
                             min_value=0.0,
                             max_value=10_000.0,
-                            step=0.1,
+                            step=1.0,
                             value=round_multiple(new_cost[l], 0.1),
-                            format="%.1f AUD/t",
+                            format="%,.0f AUD/t",
                         )
 
                         if l in ["grey_methanol", "e_methanol"]:
