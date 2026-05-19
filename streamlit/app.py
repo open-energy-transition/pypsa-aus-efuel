@@ -1150,7 +1150,7 @@ if t_results.open:
                                     unit=map_unit,
                                 )
 
-                                st.pyplot(fig, use_container_width=False)
+                                st.pyplot(fig, width='content')
 
                         except Exception as exc:
                             st.error(f"Could not build capacity map: {exc}")
@@ -1311,14 +1311,13 @@ if t_results.open:
                         index=0,
                     )
 
-                    BASE_DIR = Path(__file__).resolve().parent.parent
+                    APP_DIR = Path(__file__).resolve().parent
 
                     shape_path = (
-                        BASE_DIR
-                        / "pypsa-earth"
-                        / "resources"
-                        / "bus_regions"
-                        / "regions_onshore_elec_s_10.geojson"
+                            APP_DIR
+                            / "data"
+                            / "shapes"
+                            / "regions_onshore_elec_s_10.geojson"
                     )
 
                     n_cost = st.session_state.solved_networks[cost_run]
@@ -1337,7 +1336,7 @@ if t_results.open:
                                     shapes,
                                 )
 
-                                st.pyplot(fig, use_container_width=False)
+                                st.pyplot(fig, width='content')
 
                                 st.caption(
                                     "Background regions are shown only for geographic context. "
@@ -1377,7 +1376,7 @@ if t_results.open:
                                     shapes,
                                 )
 
-                                st.pyplot(fig, use_container_width=False)
+                                st.pyplot(fig, width='content')
 
                                 st.caption(
                                     "Background regions are shown only for geographic context. "
@@ -1422,7 +1421,7 @@ if t_results.open:
                                     shapes,
                                 )
 
-                                st.pyplot(fig, use_container_width=False)
+                                st.pyplot(fig, width='content')
 
                                 st.caption(
                                     "Background regions are shown only for geographic context. "
@@ -1467,7 +1466,7 @@ if t_results.open:
                                     shapes,
                                 )
 
-                                st.pyplot(fig, use_container_width=False)
+                                st.pyplot(fig, width='content')
 
                                 st.caption(
                                     "Background regions are shown only for geographic context. "
