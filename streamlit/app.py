@@ -1518,7 +1518,7 @@ if t_results.open:
                     df_plot = (
                         df_system[df_system["cost_type"] == system_cost_type]
                         .groupby(
-                            ["scenario", "macro_category"],
+                            ["scenario", "tech_label"],
                             as_index=False,
                         )["cost_billion"]
                         .sum()
@@ -1527,7 +1527,7 @@ if t_results.open:
                     categories = [
                         c
                         for c in renamed_tech_colors
-                        if c in df_plot["macro_category"].unique()
+                        if c in df_plot["tech_label"].unique()
                     ]
 
                     chart = (
@@ -1544,8 +1544,8 @@ if t_results.open:
                                 stack="zero",
                             ),
                             color=alt.Color(
-                                "macro_category:N",
-                                title="Category",
+                                "tech_label:N",
+                                title="Technology",
                                 scale=alt.Scale(
                                     domain=categories,
                                     range=[renamed_tech_colors[c] for c in categories],
@@ -1553,7 +1553,7 @@ if t_results.open:
                             ),
                             tooltip=[
                                 "scenario",
-                                "macro_category",
+                                "tech_label",
                                 alt.Tooltip(
                                     "cost_billion:Q",
                                     format=",.2f",
@@ -1568,22 +1568,30 @@ if t_results.open:
                     st.subheader("Technology-level breakdown")
 
                     def make_technology_cost_table(df_system, cost_type):
+                        df_cost = df_system[df_system["cost_type"] == cost_type].copy()
 
-                        category_map = (
-                            df_system[["tech_label", "macro_category"]]
+                        def clean_technology_list(values):
+                            technologies = sorted(
+                                {
+                                    item.strip()
+                                    for value in values.astype(str)
+                                    for item in value.split(",")
+                                    if item.strip()
+                                }
+                            )
+                            return ", ".join(technologies)
+
+                        raw_name_map = (
+                            df_cost[["tech_label", "raw_technology"]]
                             .drop_duplicates()
-                            .set_index("tech_label")["macro_category"]
+                            .groupby("tech_label")["raw_technology"]
+                            .apply(clean_technology_list)
                         )
 
                         table = (
-                            df_system[df_system["cost_type"] == cost_type]
-                            .groupby(
-                                [
-                                    "tech_label",
-                                    "scenario",
-                                ],
-                                as_index=False,
-                            )["cost_billion"]
+                            df_cost.groupby(["tech_label", "scenario"], as_index=False)[
+                                "cost_billion"
+                            ]
                             .sum()
                             .pivot_table(
                                 index="tech_label",
@@ -1594,15 +1602,35 @@ if t_results.open:
                             .round(2)
                         )
 
-                        table.insert(
-                            0,
-                            "Macro category",
-                            table.index.map(category_map),
-                        )
+                        table.insert(0, "Technology", table.index.map(raw_name_map))
 
                         table = table.reset_index().rename(
-                            columns={"tech_label": "Technology"}
+                            columns={"tech_label": "Category"}
                         )
+
+                        scenario_cols = [
+                            c
+                            for c in table.columns
+                            if c not in ["Category", "Technology"]
+                        ]
+                        table = table[table[scenario_cols].abs().sum(axis=1) > 1e-9]
+
+                        category_order = [
+                            c
+                            for c in renamed_tech_colors
+                            if c in table["Category"].unique()
+                        ]
+
+                        table["Category"] = pd.Categorical(
+                            table["Category"],
+                            categories=category_order,
+                            ordered=True,
+                        )
+
+                        table = table.sort_values(
+                            ["Category", "Technology"], ignore_index=True
+                        )
+                        table["Category"] = table["Category"].astype(str)
 
                         return table
 
