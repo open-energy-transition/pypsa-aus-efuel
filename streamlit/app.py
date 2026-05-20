@@ -176,35 +176,6 @@ DISPATCH_COLORS = {
     "Alkaline electrolyzer small": "#b2df8a",
 }
 
-DISPATCH_COLORS = {
-    "Utility solar": "#f9d002",
-    "Rooftop solar": "#ffea80",
-    "Onshore wind": "#235ebc",
-    "Offshore wind AC": "#6895dd",
-    "Offshore wind DC": "#74c6f2",
-    "Run-of-river hydro": "#3dbfb0",
-    "Hydro": "#298c81",
-    "Pumped hydro": "#51dbcc",
-    "Battery": "#b88300",
-    "Biomass": "#4fba41",
-    "Coal": "#000000",
-    "Oil": "#555555",
-    "Gas OCGT": "#db6a00",
-    "Gas CCGT": "#db0000",
-    "Grey ammonia": "#b100ff",
-    "e-ammonia": "#e5abff",
-    "Grey methanol": "#ed0202",
-    "e-methanol": "#ff8080",
-    "SMR": "#666666",
-    "SMR CC": "#0059ff",
-    "DAC": "#eea3ff",
-    "PEM electrolyzer": "#2ecbff",
-    "SOEC": "#f5ff2e",
-    "Alkaline electrolyzer large": "#1b9e77",
-    "Alkaline electrolyzer medium": "#66c2a5",
-    "Alkaline electrolyzer small": "#b2df8a",
-}
-
 load_data: dict[str, dict[str, int | float | str | list[str]]] = {
     "custom_h2": {
         "multiplier": 1,
@@ -551,16 +522,14 @@ t_welcome, t_economic, t_demand, t_optimization, t_results = st.tabs(
 if t_welcome.open:
     with t_welcome:
         st.subheader("Welcome to the PyPSA-AUS-eFuels Interactive Manager!")
-        st.write(
-            f"""
+        st.write(f"""
             Use the sidebar to load your network and set project targets. Then, navigate through the tabs to manage different aspects of your project (economic and demand parameters).
 
             By default it is assumed that {DEFAULT_E_SHARE*100}% of the diesel demand can be reduced by electrification.
             Additionally it is assumed that {DEFAULT_E_SHARE_PRODUCTION*100}% of the remaining diesel and ammonia demand shall be covered by local green production.
             To review and/or adjust the required methanol and/or ammonia demand settings pull down the relevant pull-down box.
             The calculated e-methanol and e-ammonia production values are automatically transferred to the “Demand Parameters” tab, where they can still be manually adjusted before being applied to the network.
-            """
-        )
+            """)
 
         # ----- sectors
         with st.expander(
