@@ -121,61 +121,46 @@ MWH_PER_TONNE: dict[str, float] = {
     "e_methanol": 5.54,
 }
 KG_PER_LITER_DIESEL = 0.85
-T_PER_GJ_DIESEL = 42.8 # or MT per PJ
+T_PER_GJ_DIESEL = 42.8  # or MT per PJ
 DEFAULT_E_SHARE = 0.50
 DEFAULT_E_SHARE_PRODUCTION = 0.30
 
 # ----- diesel / methanol demand
 # source: Department of Climate Change, Energy, the Environment and Water, Australian Energy Statistics, Table F, August 2025
 # last available data for 2023-24
-sectors: dict[str, float] = { 
-    'Mining': {
-        'demand': 299.0 / T_PER_GJ_DIESEL, 
-        'e-share': DEFAULT_E_SHARE
-    },
-    'Transport': {
-        'demand': 765.2 / T_PER_GJ_DIESEL, 
-        'e-share': DEFAULT_E_SHARE
-    },
-    'Agriculture': {
-        'demand': 88.8 / T_PER_GJ_DIESEL,
-        'e-share': DEFAULT_E_SHARE
-    },
-    'Manufacturing': {
-        'demand': 13.9 / T_PER_GJ_DIESEL,
-        'e-share': DEFAULT_E_SHARE
-    },
-    'Construction': {
-        'demand': 26.5 / T_PER_GJ_DIESEL,
-        'e-share':DEFAULT_E_SHARE
-    },
-    'Commercial Services': {
-        'demand': 32.1 / T_PER_GJ_DIESEL,
-        'e-share': DEFAULT_E_SHARE
+sectors: dict[str, float] = {
+    "Mining": {"demand": 299.0 / T_PER_GJ_DIESEL, "e-share": DEFAULT_E_SHARE},
+    "Transport": {"demand": 765.2 / T_PER_GJ_DIESEL, "e-share": DEFAULT_E_SHARE},
+    "Agriculture": {"demand": 88.8 / T_PER_GJ_DIESEL, "e-share": DEFAULT_E_SHARE},
+    "Manufacturing": {"demand": 13.9 / T_PER_GJ_DIESEL, "e-share": DEFAULT_E_SHARE},
+    "Construction": {"demand": 26.5 / T_PER_GJ_DIESEL, "e-share": DEFAULT_E_SHARE},
+    "Commercial Services": {
+        "demand": 32.1 / T_PER_GJ_DIESEL,
+        "e-share": DEFAULT_E_SHARE,
     },
 }
 
 # ----- fertlizer demand
-fertilizeres: dict[str, float] = { 
-    'Urea': {
-        'demand': 3.8,
-        'ammonia_equiv': 0.57,
-        'e-share': 0.00,
+fertilizeres: dict[str, float] = {
+    "Urea": {
+        "demand": 3.8,
+        "ammonia_equiv": 0.57,
+        "e-share": 0.00,
     },
-    'Ammonia': {
-        'demand': 0.1,
-        'ammonia_equiv': 1.00,
-        'e-share': 0.00,
+    "Ammonia": {
+        "demand": 0.1,
+        "ammonia_equiv": 1.00,
+        "e-share": 0.00,
     },
-    'MAP': {
-        'demand': 0.7,
-        'ammonia_equiv': 0.15,
-        'e-share': 0.00,
+    "MAP": {
+        "demand": 0.7,
+        "ammonia_equiv": 0.15,
+        "e-share": 0.00,
     },
-    'DAP': {
-        'demand': 0.6,
-        'ammonia_equiv': 0.26,
-        'e-share': 0.00, 
+    "DAP": {
+        "demand": 0.6,
+        "ammonia_equiv": 0.26,
+        "e-share": 0.00,
     },
 }
 
@@ -566,9 +551,13 @@ if t_welcome.open:
         )
 
         # ----- sectors
-        with st.expander("Detailed Demand Split Parameters for Diesel / Methanol", expanded=False):
+        with st.expander(
+            "Detailed Demand Split Parameters for Diesel / Methanol", expanded=False
+        ):
 
-            col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(8, vertical_alignment="top")
+            col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(
+                8, vertical_alignment="top"
+            )
             col1.write("**Sector**")
             col2.write("**Historic Diesel Demand (Mtpa)**")
             col3.write("**Electrified Demand Share (%)**")
@@ -584,8 +573,10 @@ if t_welcome.open:
             total_demand = 0
             total_remaining_demand = 0
             for s in sectors:
-                old_demand[s] = sectors[s]['demand']
-                col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(8, vertical_alignment="top")
+                old_demand[s] = sectors[s]["demand"]
+                col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(
+                    8, vertical_alignment="top"
+                )
                 col1.write(f"**{s}**")
                 col2.write(f"{sectors[s]['demand']:.1f} ")
                 with col3:
@@ -595,30 +586,34 @@ if t_welcome.open:
                         min_value=0.0,
                         max_value=100.0,
                         step=1.0,
-                        value=sectors[s]['e-share'] * 100,
+                        value=sectors[s]["e-share"] * 100,
                         format="%.0f%%",
                     )
 
-                new_demand_meoh[s] = (old_demand[s] * (1 - new_share[s] / 100))
+                new_demand_meoh[s] = old_demand[s] * (1 - new_share[s] / 100)
                 col4.write(f"{new_demand_meoh[s]:.1f}")
 
-                total_demand += sectors[s]['demand']
+                total_demand += sectors[s]["demand"]
                 total_remaining_demand += new_demand_meoh[s]
 
-            col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(8, vertical_alignment="top")
+            col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(
+                8, vertical_alignment="top"
+            )
             col1.write("**Total**")
             col2.write(f"{total_demand:.1f}")
-            total_electrification_share = (total_demand - total_remaining_demand) / total_demand
+            total_electrification_share = (
+                total_demand - total_remaining_demand
+            ) / total_demand
             col3.slider(
-                        label=f"Electrification Share {s}",
-                        label_visibility="collapsed",
-                        min_value=0.0,
-                        max_value=100.0,
-                        step=0.1,
-                        value=total_electrification_share * 100,
-                        format="%.1f%%",
-                        disabled=True,
-                    )
+                label=f"Electrification Share {s}",
+                label_visibility="collapsed",
+                min_value=0.0,
+                max_value=100.0,
+                step=0.1,
+                value=total_electrification_share * 100,
+                format="%.1f%%",
+                disabled=True,
+            )
             col4.write(f"{total_remaining_demand:.1f}")
 
             with col5:
@@ -649,7 +644,7 @@ if t_welcome.open:
                     min_value=0.0,
                     max_value=100.0,
                     step=1.0,
-                    value=DEFAULT_E_SHARE_PRODUCTION*100,
+                    value=DEFAULT_E_SHARE_PRODUCTION * 100,
                     format="%.0f%%",
                 )
             with col8:
@@ -659,21 +654,31 @@ if t_welcome.open:
                     min_value=0.0,
                     max_value=total_remaining_demand,
                     step=0.1,
-                    value=(domestic_requested_share) /100 * ( total_remaining_demand - domestic_supply),
+                    value=(domestic_requested_share)
+                    / 100
+                    * (total_remaining_demand - domestic_supply),
                     format="%.1f Mtpa",
                     disabled=True,
                 )
 
             st.session_state.new_demand_meoh = domestic_requested_demand
 
-            st.write("**Source**: *Department of Climate Change, Energy, the Environment and Water, Australian Energy Statistics, Table F, August 2025 (Demand numbers 2023-24).*")
+            st.write(
+                "**Source**: *Department of Climate Change, Energy, the Environment and Water, Australian Energy Statistics, Table F, August 2025 (Demand numbers 2023-24).*"
+            )
 
-        st.write(f"**Considered local e-Methanol production: {st.session_state.new_demand_meoh:.1f} Mtpa**")
+        st.write(
+            f"**Considered local e-Methanol production: {st.session_state.new_demand_meoh:.1f} Mtpa**"
+        )
 
         # ----- fertilizeres
-        with st.expander("Detailed Demand Split Parameters for Fertilizers / Ammonia", expanded=False):
+        with st.expander(
+            "Detailed Demand Split Parameters for Fertilizers / Ammonia", expanded=False
+        ):
 
-            col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(8, vertical_alignment="top")
+            col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(
+                8, vertical_alignment="top"
+            )
             col1.write("**Sector**")
             col2.write("**Historic Fertilizer Demand (Mtpa)**")
             col3.write("**Electrified Share (%)**")
@@ -689,10 +694,16 @@ if t_welcome.open:
             total_demand = 0
             total_remaining_demand = 0
             for s in fertilizeres:
-                old_demand[s] = fertilizeres[s]['demand']*fertilizeres[s]['ammonia_equiv']
-                col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(8, vertical_alignment="top")
+                old_demand[s] = (
+                    fertilizeres[s]["demand"] * fertilizeres[s]["ammonia_equiv"]
+                )
+                col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(
+                    8, vertical_alignment="top"
+                )
                 col1.write(f"**{s}**")
-                col2.write(f"{(fertilizeres[s]['demand']*fertilizeres[s]['ammonia_equiv']):.1f} ")
+                col2.write(
+                    f"{(fertilizeres[s]['demand']*fertilizeres[s]['ammonia_equiv']):.1f} "
+                )
                 with col3:
                     new_share[s] = st.slider(
                         label=f"Electrification Share {s}",
@@ -700,32 +711,38 @@ if t_welcome.open:
                         min_value=0.0,
                         max_value=100.0,
                         step=1.0,
-                        value=fertilizeres[s]['e-share'] * 100,
+                        value=fertilizeres[s]["e-share"] * 100,
                         format="%.0f%%",
                         disabled=True,
                     )
 
                 with col4:
-                    new_demand_nh3[s] = (old_demand[s] * (1 - new_share[s] / 100))
+                    new_demand_nh3[s] = old_demand[s] * (1 - new_share[s] / 100)
                     st.write(f"{new_demand_nh3[s]:.1f}")
 
-                total_demand += fertilizeres[s]['demand']*fertilizeres[s]['ammonia_equiv']
+                total_demand += (
+                    fertilizeres[s]["demand"] * fertilizeres[s]["ammonia_equiv"]
+                )
                 total_remaining_demand += new_demand_nh3[s]
 
-            col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(8, vertical_alignment="top")
+            col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(
+                8, vertical_alignment="top"
+            )
             col1.write("**Total**")
             col2.write(f"{total_demand:.1f}")
-            total_electrification_share = (total_demand - total_remaining_demand) / total_demand
+            total_electrification_share = (
+                total_demand - total_remaining_demand
+            ) / total_demand
             col3.slider(
-                        label=f"Electrification Share {s}",
-                        label_visibility="collapsed",
-                        min_value=0.0,
-                        max_value=100.0,
-                        step=0.1,
-                        value=total_electrification_share * 100,
-                        format="%.1f%%",
-                        disabled=True,
-                    )
+                label=f"Electrification Share {s}",
+                label_visibility="collapsed",
+                min_value=0.0,
+                max_value=100.0,
+                step=0.1,
+                value=total_electrification_share * 100,
+                format="%.1f%%",
+                disabled=True,
+            )
             col4.write(f"{total_remaining_demand:.1f}")
 
             with col5:
@@ -756,7 +773,7 @@ if t_welcome.open:
                     min_value=0.0,
                     max_value=100.0,
                     step=1.0,
-                    value=DEFAULT_E_SHARE_PRODUCTION*100,
+                    value=DEFAULT_E_SHARE_PRODUCTION * 100,
                     format="%.0f%%",
                 )
             with col8:
@@ -766,15 +783,20 @@ if t_welcome.open:
                     min_value=0.0,
                     max_value=total_remaining_demand,
                     step=0.1,
-                    value=(total_remaining_demand-domestic_supply)*(domestic_requested_share/100),
+                    value=(total_remaining_demand - domestic_supply)
+                    * (domestic_requested_share / 100),
                     format="%.1f Mtpa",
                     disabled=True,
                 )
 
-            st.write("**Applied NH3 equivalents: Urea=0.57, Ammonia=1.00, MAP=0.15, and DAP=0.26**")
+            st.write(
+                "**Applied NH3 equivalents: Urea=0.57, Ammonia=1.00, MAP=0.15, and DAP=0.26**"
+            )
             st.session_state.new_demand_nh3 = domestic_requested_demand
 
-        st.write(f"**Considered local e-Ammonia production: {st.session_state.new_demand_nh3:.1f} Mtpa**")
+        st.write(
+            f"**Considered local e-Ammonia production: {st.session_state.new_demand_nh3:.1f} Mtpa**"
+        )
 
         with st.popover("Project Description", width="stretch", icon="📄"):
             st.write(
@@ -984,10 +1006,10 @@ if t_demand.open:
                         old_multiplier[l] = 0.0
 
                 if not st.session_state.new_demand_meoh is None:
-                    old_multiplier['e_methanol'] = st.session_state.new_demand_meoh
+                    old_multiplier["e_methanol"] = st.session_state.new_demand_meoh
 
                 if not st.session_state.new_demand_nh3 is None:
-                    old_multiplier['e_ammonia'] = st.session_state.new_demand_nh3
+                    old_multiplier["e_ammonia"] = st.session_state.new_demand_nh3
 
                 if st.session_state.new_cost is None:
                     new_cost = {}
