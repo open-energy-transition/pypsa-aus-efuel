@@ -1803,12 +1803,24 @@ if t_results.open:
                                 )
                             )
 
+                        valid_state_maps = [
+                            state_costs
+                            for _, state_costs, _, _, _ in state_maps
+                            if state_costs is not None
+                            and output_col in state_costs.columns
+                            and not state_costs[output_col].dropna().empty
+                        ]
+
+                        if not valid_state_maps:
+                            st.warning(
+                                "No valid cost data available for the selected scenarios."
+                            )
+                            st.stop()
+
                         all_values = pd.concat(
                             [
                                 state_costs[output_col].dropna()
-                                for _, state_costs, _, _, _ in state_maps
-                                if state_costs is not None
-                                and output_col in state_costs.columns
+                                for state_costs in valid_state_maps
                             ],
                             ignore_index=True,
                         )
