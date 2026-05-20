@@ -547,6 +547,7 @@ if t_welcome.open:
             By default it is assumed that {DEFAULT_E_SHARE*100}% of the diesel demand can be reduced by electrification.
             Additionally it is assumed that {DEFAULT_E_SHARE_PRODUCTION*100}% of the remaining diesel and ammonia demand shall be covered by local green production.
             To review and/or adjust the required methanol and/or ammonia demand settings pull down the relevant pull-down box.
+            The calculated e-methanol and e-ammonia production values are automatically transferred to the “Demand Parameters” tab, where they can still be manually adjusted before being applied to the network.
             """
         )
 
