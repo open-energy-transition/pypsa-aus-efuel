@@ -1078,6 +1078,8 @@ if t_results.open:
                     "Dispatch",
                     "Commodity costs",
                     "System costs",
+                    # "Technical comparison",
+                    "Economic comparison",
                 ],
                 horizontal=True,
             )
@@ -1600,62 +1602,78 @@ if t_results.open:
 
                     st.altair_chart(chart, width="stretch")
 
-                # TECHNICAL COMPARISON
+            #            # TECHNICAL COMPARISON
+            #
+            #            if result_view == "Technical comparison":
+            #
+            #                st.header("Technical Comparison")
+            #
+            #                st.write(
+            #                    "Only technologies with different values across selected scenarios are shown."
+            #                )
+            #
+            #                technical_df = (
+            #                    st.session_state.results.rename(
+            #                        columns=label_map
+            #                    )
+            #                )
+            #
+            #                technical_df = technical_df[
+            #                    ~technical_df.index.get_level_values(0)
+            #                    .str.contains("Economics")
+            #                ]
+            #
+            #                technical_df = technical_df[
+            #                    technical_df.index.get_level_values(0)
+            #                    .str.contains("Link")
+            #                ]
+            #
+            #                technical_df = (
+            #                    technical_df[
+            #                        technical_df.nunique(axis=1) > 1
+            #                        ]
+            #                    .reset_index()
+            #                    .rename(
+            #                        columns={
+            #                            "component": "Component",
+            #                            "carrier": "Technology",
+            #                        }
+            #                    )
+            #                )
+            #
+            #                technical_df.insert(2, "Unit", "MW")
+            #
+            #                scenario_cols = [
+            #                    c
+            #                    for c in technical_df.columns
+            #                    if c not in [
+            #                        "Component",
+            #                        "Technology",
+            #                        "Unit",
+            #                    ]
+            #                ]
+            #
+            #                st.dataframe(
+            #                    technical_df[
+            #                        [
+            #                            "Component",
+            #                            "Technology",
+            #                            "Unit",
+            #                        ]
+            #                        + scenario_cols
+            #                        ].style.format(
+            #                        {
+            #                            col: "{:.1f}"
+            #                            for col in scenario_cols
+            #                        }
+            #                    ),
+            #                    hide_index=True,
+            #                    width="stretch",
+            #                )
 
-                st.header("Technical Comparison")
+            # ECONOMIC COMPARISON
 
-                st.write(
-                    "Only technologies with different values across selected scenarios are shown."
-                )
-
-                technical_df = st.session_state.results.rename(columns=label_map)
-
-                technical_df = technical_df[
-                    ~technical_df.index.get_level_values(0).str.contains("Economics")
-                ]
-
-                technical_df = technical_df[
-                    technical_df.index.get_level_values(0).str.contains("Link")
-                ]
-
-                technical_df = (
-                    technical_df[technical_df.nunique(axis=1) > 1]
-                    .reset_index()
-                    .rename(
-                        columns={
-                            "component": "Component",
-                            "carrier": "Technology",
-                        }
-                    )
-                )
-
-                technical_df.insert(2, "Unit", "MW")
-
-                scenario_cols = [
-                    c
-                    for c in technical_df.columns
-                    if c
-                    not in [
-                        "Component",
-                        "Technology",
-                        "Unit",
-                    ]
-                ]
-
-                st.dataframe(
-                    technical_df[
-                        [
-                            "Component",
-                            "Technology",
-                            "Unit",
-                        ]
-                        + scenario_cols
-                    ].style.format({col: "{:.1f}" for col in scenario_cols}),
-                    hide_index=True,
-                    width="stretch",
-                )
-
-                # ECONOMIC COMPARISON
+            if result_view == "Economic comparison":
 
                 st.header("Economic Comparison")
 
@@ -1669,7 +1687,7 @@ if t_results.open:
 
                 st.bar_chart(
                     df.T,
-                    x_label="Runs",
+                    x_label="Scenario",
                     y_label="Annual Cost (Million AUD)",
                     horizontal=True,
                 )
