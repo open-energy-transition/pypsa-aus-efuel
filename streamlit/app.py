@@ -334,11 +334,9 @@ st.set_page_config(page_title=f"{title} UI", layout="wide")
 st.title(f"{title} Interactive Manager")
 st.write("Walk through the tabs below from left to the right ...")
 with st.popover("Disclaimer", width="stretch", icon="⚠️"):
-    st.write(
-        """
+    st.write("""
         The content of this document/web page is intended for the exclusive use of **Open Energy Transition**'s client and other contractually agreed recipients. It may only be made available in whole or in part to third parties with the client’s consent and on a non-reliance basis. **Open Energy Transition** is not liable to third parties for the completeness and accuracy of the information provided therein.
-        """
-    )
+        """)
 
 if "n" not in st.session_state:
     st.session_state.n = None
@@ -478,8 +476,7 @@ t_welcome, t_economic, t_demand, t_optimization, t_results = st.tabs(
 if t_welcome.open:
     with t_welcome:
         st.subheader("Welcome to the PyPSA-AUS-eFuels Interactive Manager!")
-        st.write(
-            """
+        st.write("""
             Use the sidebar to load your network and set project targets. Then, navigate through the tabs to manage different aspects of your project (economic and demand parameters).
 
             In 2025, Australia's **Diesel** consumption was about 32 bn liter or 27.2 Mtpa (million ton per annum). About 85% (or more than 23 Mtpa) needed to be imported. Assuming AUD 3/liter, this makes more than AUD ~80 bn of import costs every year. A historical growth rate of 5-10%/year has been observed and is expected going forward.
@@ -487,18 +484,15 @@ if t_welcome.open:
             While short distance truck transport and a significant share of mining might be replaced by electric vehicles, long distance transport via truck and train likely still rely on liquid fuels for the foreseeable future.
 
             **10% (~2.3 Mtpa or 2.7 million liters) diesel replacement would save AUD ~8 bn per year in import costs, which could be used to invest in local production, local renewable energy and local employment instead.**
-            """
-        )
+            """)
         with st.popover("Project Description", width="stretch", icon="📄"):
-            st.write(
-                """
+            st.write("""
                 This application has been developed during a project between **Open Energy Transition** and **Sagax Capital / Keshik Capital** to assess the impact on Australia on local Ammonia and Methanol production.
 
                 The project aims to evaluate the potential for local production of these chemicals using renewable energy sources, and how this does help Australia in its energy transition and resilience.
 
                 **The entire project source is available on GitHub: https://github.com/open-energy-transition/pypsa-aus-efuel.**
-                """
-            )
+                """)
 
 # TAB ECONOMIC PARAMETERS
 if t_economic.open:
@@ -1744,8 +1738,6 @@ if t_results.open:
                 "Please load a network and run an optimization to see results here ..."
             )
 
-            st.write(
-                """
+            st.write("""
                 After running an optimization, you will see a detailed breakdown of the expanded capacities and economic outcomes for each technology, allowing you to assess the impact of your parameter adjustments on the network's performance and costs.
-                """
-            )
+                """)
