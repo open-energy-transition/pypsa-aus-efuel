@@ -297,6 +297,7 @@ def compute_capacity_by_bus(
 
     capacity["plot_cluster"] = (
         capacity["cluster"]
+        .str.replace(" low voltage", "", regex=False)
         .str.replace(" grey-ammonia", "", regex=False)
         .str.replace(" e-ammonia", "", regex=False)
         .str.replace(" grey-methanol", "", regex=False)
@@ -868,123 +869,6 @@ def compute_lcoe_by_bus(network: pypsa.Network) -> tuple[pd.DataFrame, pd.DataFr
     return lcoe_by_bus, lcoe_data
 
 
-def plot_lcoe_map_by_bus(
-    lcoe_by_bus: pd.DataFrame,
-    shapes: gpd.GeoDataFrame,
-    title: str | None = None,
-    ax=None,
-    vmin: float | None = None,
-    vmax: float | None = None,
-):
-    """Plot production-weighted LCOE by electricity cluster over a map background."""
-    if lcoe_by_bus.empty:
-        return None
-
-    shapes = shapes.to_crs("EPSG:4326")
-
-    if vmin is None:
-        vmin = lcoe_by_bus["weighted_lcoe"].quantile(0.05)
-
-    if vmax is None:
-        vmax = lcoe_by_bus["weighted_lcoe"].quantile(0.95)
-
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(5.0, 3.5))
-    else:
-        fig = ax.figure
-
-    # Geographic background only.
-    shapes.plot(
-        ax=ax,
-        facecolor="whitesmoke",
-        edgecolor="0.7",
-        linewidth=0.5,
-        zorder=1,
-    )
-
-    max_dispatch = lcoe_by_bus["dispatch_twh"].max()
-    if max_dispatch > 0:
-        sizes = 200 * np.sqrt(lcoe_by_bus["dispatch_twh"] / max_dispatch)
-    else:
-        sizes = 80
-
-    scatter = ax.scatter(
-        lcoe_by_bus["x"],
-        lcoe_by_bus["y"],
-        c=lcoe_by_bus["weighted_lcoe"],
-        s=sizes,
-        cmap="RdYlGn_r",
-        vmin=vmin,
-        vmax=vmax,
-        marker="o",
-        linewidths=0,
-        edgecolors="none",
-        alpha=1.0,
-        zorder=5,
-    )
-
-    cbar = fig.colorbar(
-        scatter,
-        ax=ax,
-        shrink=0.75,
-        pad=0.02,
-    )
-
-    cbar.set_label(
-        "Generation-weighted LCOE (AUD/MWh)",
-        fontsize=6,
-    )
-
-    cbar.ax.tick_params(labelsize=6)
-
-    # Bubble-size legend for annual generation.
-    legend_values = [
-        lcoe_by_bus["dispatch_twh"].quantile(0.25),
-        lcoe_by_bus["dispatch_twh"].quantile(0.50),
-        lcoe_by_bus["dispatch_twh"].quantile(0.90),
-    ]
-
-    legend_values = [2, 10, 50]
-
-    legend_handles = []
-
-    for value in legend_values:
-        marker_size = 200 * np.sqrt(value / max_dispatch)
-
-        legend_handles.append(
-            ax.scatter(
-                [],
-                [],
-                s=marker_size,
-                color="lightgray",
-                edgecolors="gray",
-                linewidths=0.1,
-                label=f"{value:.1f} TWh",
-            )
-        )
-
-    if legend_handles:
-        ax.legend(
-            handles=legend_handles,
-            title="Annual generation",
-            loc="lower left",
-            frameon=False,
-            fontsize=6,
-            title_fontsize=6,
-            labelspacing=1.4,
-            borderpad=0.8,
-            handletextpad=1.0,
-        )
-
-    ax.set_xlim(110, 155)
-    ax.set_ylim(-45, -10)
-    ax.axis("off")
-
-    fig.tight_layout()
-
-    return fig
-
-
 def compute_lcoh_by_bus(network: pypsa.Network) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Compute production-weighted LCOH for grid H2 by electricity cluster."""
     snapshot_weights = network.snapshot_weightings.generators
@@ -1102,114 +986,6 @@ def compute_lcoh_by_bus(network: pypsa.Network) -> tuple[pd.DataFrame, pd.DataFr
     )
 
     return lcoh_by_bus, lcoh_data
-
-
-def plot_lcoh_map_by_bus(
-    lcoh_by_bus: pd.DataFrame,
-    shapes: gpd.GeoDataFrame,
-    title: str | None = None,
-    ax=None,
-    vmin: float | None = None,
-    vmax: float | None = None,
-):
-    """Plot production-weighted LCOH by electricity cluster over a map background."""
-    if lcoh_by_bus.empty:
-        return None
-
-    shapes = shapes.to_crs("EPSG:4326")
-
-    if vmin is None:
-        vmin = lcoh_by_bus["weighted_lcoh_aud_per_kg"].quantile(0.05)
-
-    if vmax is None:
-        vmax = lcoh_by_bus["weighted_lcoh_aud_per_kg"].quantile(0.95)
-
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(5.0, 3.5))
-    else:
-        fig = ax.figure
-
-    shapes.plot(
-        ax=ax,
-        facecolor="whitesmoke",
-        edgecolor="0.7",
-        linewidth=0.5,
-        zorder=1,
-    )
-
-    max_dispatch = lcoh_by_bus["h2_dispatch_kt"].max()
-    if max_dispatch > 0:
-        sizes = 200 * np.sqrt(lcoh_by_bus["h2_dispatch_kt"] / max_dispatch)
-    else:
-        sizes = 80
-
-    scatter = ax.scatter(
-        lcoh_by_bus["x"],
-        lcoh_by_bus["y"],
-        c=lcoh_by_bus["weighted_lcoh_aud_per_kg"],
-        s=sizes,
-        cmap="RdYlGn_r",
-        vmin=vmin,
-        vmax=vmax,
-        marker="o",
-        linewidths=0,
-        edgecolors="none",
-        alpha=1.0,
-        zorder=5,
-    )
-
-    cbar = fig.colorbar(
-        scatter,
-        ax=ax,
-        shrink=0.75,
-        pad=0.02,
-    )
-
-    cbar.set_label(
-        "Production-weighted LCOH (AUD/kg H2)",
-        fontsize=6,
-    )
-
-    cbar.ax.tick_params(labelsize=6)
-
-    legend_values = [2, 10, 50]
-    legend_handles = []
-
-    for value in legend_values:
-        marker_size = 200 * np.sqrt(value / max_dispatch)
-
-        legend_handles.append(
-            ax.scatter(
-                [],
-                [],
-                s=marker_size,
-                color="lightgray",
-                edgecolors="gray",
-                linewidths=0.1,
-                label=f"{value:.0f} kt H2/year",
-            )
-        )
-
-    if legend_handles:
-        ax.legend(
-            handles=legend_handles,
-            title="Annual H2 production",
-            loc="lower left",
-            frameon=False,
-            fontsize=6,
-            title_fontsize=6,
-            labelspacing=1.4,
-            borderpad=0.8,
-            handletextpad=1.0,
-        )
-
-    ax.set_xlim(110, 155)
-    ax.set_ylim(-45, -10)
-    ax.axis("off")
-
-    fig.tight_layout()
-
-    return fig
 
 
 def compute_lco_product_by_bus(
@@ -1374,146 +1150,6 @@ def compute_lco_methanol_by_bus(network: pypsa.Network):
         product_bus_carrier="e-methanol",
         product_label="methanol",
         mwh_per_tonne=5.54,
-    )
-
-
-def plot_lco_product_map_by_bus(
-    product_by_bus: pd.DataFrame,
-    shapes: gpd.GeoDataFrame,
-    value_col: str,
-    cbar_label: str,
-    legend_title: str,
-    legend_unit: str,
-    title: str | None = None,
-    ax=None,
-    vmin: float | None = None,
-    vmax: float | None = None,
-):
-    """Plot production-weighted product cost by cluster over a map background."""
-    if product_by_bus.empty:
-        return None
-
-    shapes = shapes.to_crs("EPSG:4326")
-
-    if vmin is None:
-        vmin = product_by_bus[value_col].quantile(0.05)
-
-    if vmax is None:
-        vmax = product_by_bus[value_col].quantile(0.95)
-
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(5.0, 3.5))
-    else:
-        fig = ax.figure
-
-    shapes.plot(
-        ax=ax,
-        facecolor="whitesmoke",
-        edgecolor="0.7",
-        linewidth=0.5,
-        zorder=1,
-    )
-
-    max_dispatch = product_by_bus["production_kt"].max()
-
-    if max_dispatch > 0:
-        sizes = 200 * np.sqrt(product_by_bus["production_kt"] / max_dispatch)
-    else:
-        sizes = 80
-
-    scatter = ax.scatter(
-        product_by_bus["x"],
-        product_by_bus["y"],
-        c=product_by_bus[value_col],
-        s=sizes,
-        cmap="RdYlGn_r",
-        vmin=vmin,
-        vmax=vmax,
-        marker="o",
-        linewidths=0,
-        edgecolors="none",
-        alpha=1.0,
-        zorder=5,
-    )
-
-    cbar = fig.colorbar(
-        scatter,
-        ax=ax,
-        shrink=0.75,
-        pad=0.02,
-    )
-
-    cbar.set_label(
-        cbar_label,
-        fontsize=6,
-    )
-
-    cbar.ax.tick_params(labelsize=6)
-
-    legend_values = [2, 10, 50]
-    legend_handles = []
-
-    for value in legend_values:
-        marker_size = 200 * np.sqrt(value / max_dispatch)
-
-        legend_handles.append(
-            ax.scatter(
-                [],
-                [],
-                s=marker_size,
-                color="lightgray",
-                edgecolors="gray",
-                linewidths=0.1,
-                label=f"{value:.0f} {legend_unit}/year",
-            )
-        )
-
-    if legend_handles:
-        ax.legend(
-            handles=legend_handles,
-            title=legend_title,
-            loc="lower left",
-            frameon=False,
-            fontsize=6,
-            title_fontsize=6,
-            labelspacing=1.4,
-            borderpad=0.8,
-            handletextpad=1.0,
-        )
-
-    ax.set_xlim(110, 155)
-    ax.set_ylim(-45, -10)
-    ax.axis("off")
-
-    if title:
-        ax.set_title(title, fontsize=10)
-
-    fig.tight_layout()
-
-    return fig
-
-
-def plot_lco_ammonia_map_by_bus(ammonia_by_bus, shapes, title=None):
-    return plot_lco_product_map_by_bus(
-        product_by_bus=ammonia_by_bus,
-        shapes=shapes,
-        value_col="weighted_lco_ammonia_aud_per_tonne",
-        cbar_label="Production-weighted LCOA (AUD/t NH3)",
-        legend_title="Annual e-ammonia production",
-        legend_unit="kt NH3",
-        title=title,
-    )
-
-
-def plot_lco_methanol_map_by_bus(methanol_by_bus, shapes, title=None):
-    return plot_lco_product_map_by_bus(
-        product_by_bus=methanol_by_bus,
-        shapes=shapes,
-        value_col="weighted_lco_methanol_aud_per_tonne",
-        cbar_label="Production-weighted LCOMeOH (AUD/t MeOH)",
-        legend_title="Annual e-methanol production",
-        legend_unit="kt MeOH",
-        title=title,
     )
 
 
@@ -1750,13 +1386,10 @@ def compute_system_costs(network, rename_capex, rename_opex, name_tag):
     )
 
     capex_grouped = (
-        capex_raw.groupby("tech_label", as_index=False)
-        .agg(
-            {
-                "Capital Expenditure": "sum",
-                "raw_technology": lambda x: ", ".join(sorted(set(x.astype(str)))),
-            }
-        )
+        capex_raw.groupby(["tech_label", "raw_technology"], as_index=False)[
+            "Capital Expenditure"
+        ]
+        .sum()
         .rename(columns={"Capital Expenditure": "cost_billion"})
     )
 
@@ -1776,13 +1409,10 @@ def compute_system_costs(network, rename_capex, rename_opex, name_tag):
     )
 
     opex_grouped = (
-        opex_raw.groupby("tech_label", as_index=False)
-        .agg(
-            {
-                "Operational Expenditure": "sum",
-                "raw_technology": lambda x: ", ".join(sorted(set(x.astype(str)))),
-            }
-        )
+        opex_raw.groupby(["tech_label", "raw_technology"], as_index=False)[
+            "Operational Expenditure"
+        ]
+        .sum()
         .rename(columns={"Operational Expenditure": "cost_billion"})
     )
 
@@ -1889,3 +1519,133 @@ def build_system_cost_table(networks):
     )
 
     return df_all
+
+
+def assign_nodes_to_states(
+    node_df: pd.DataFrame,
+    states: gpd.GeoDataFrame,
+    state_col: str = "STATE_NAME",
+) -> gpd.GeoDataFrame:
+    """Assign node-level results to Australian states using point-in-polygon."""
+    nodes = node_df.dropna(subset=["x", "y"]).copy()
+
+    nodes_gdf = gpd.GeoDataFrame(
+        nodes,
+        geometry=gpd.points_from_xy(nodes["x"], nodes["y"]),
+        crs="EPSG:4326",
+    )
+
+    states = states.to_crs("EPSG:4326")
+
+    nodes_states = gpd.sjoin(
+        nodes_gdf,
+        states[[state_col, "geometry"]],
+        how="left",
+        predicate="within",
+    )
+
+    return nodes_states.dropna(subset=[state_col])
+
+
+def aggregate_node_costs_by_state(
+    node_df: pd.DataFrame,
+    states: gpd.GeoDataFrame,
+    cost_col: str,
+    weight_col: str,
+    output_cost_col: str,
+    state_col: str = "STATE_NAME",
+) -> gpd.GeoDataFrame:
+    """Aggregate node-level commodity costs to states using production-weighted averages."""
+    nodes_states = assign_nodes_to_states(
+        node_df=node_df,
+        states=states,
+        state_col=state_col,
+    )
+
+    rows = []
+
+    for state_name, group in nodes_states.groupby(state_col):
+        weight = group[weight_col]
+
+        if weight.sum() <= 0:
+            continue
+
+        rows.append(
+            {
+                state_col: state_name,
+                output_cost_col: np.average(
+                    group[cost_col],
+                    weights=weight,
+                ),
+                weight_col: weight.sum(),
+            }
+        )
+
+    if not rows:
+        state_costs = pd.DataFrame(columns=[state_col, output_cost_col, weight_col])
+    else:
+        state_costs = pd.DataFrame(rows)
+
+    return states.merge(
+        state_costs,
+        on=state_col,
+        how="left",
+    )
+
+
+def plot_state_cost_map(
+    state_costs: gpd.GeoDataFrame,
+    value_col: str,
+    colorbar_label: str,
+    title: str | None = None,
+    ax=None,
+    vmin: float | None = None,
+    vmax: float | None = None,
+):
+    """Plot state-level production-weighted commodity costs."""
+    if state_costs.empty or value_col not in state_costs.columns:
+        return None
+
+    state_costs = state_costs.to_crs("EPSG:4326")
+
+    if vmin is None:
+        vmin = state_costs[value_col].quantile(0.05)
+
+    if vmax is None:
+        vmax = state_costs[value_col].quantile(0.95)
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(5.0, 3.5))
+    else:
+        fig = ax.figure
+
+    state_costs.plot(
+        ax=ax,
+        column=value_col,
+        cmap="RdYlGn_r",
+        vmin=vmin,
+        vmax=vmax,
+        legend=True,
+        missing_kwds={
+            "color": "whitesmoke",
+            "edgecolor": "0.7",
+            "label": "No production",
+        },
+        edgecolor="0.4",
+        linewidth=0.5,
+    )
+
+    cbar = fig.axes[-1]
+    cbar.set_ylabel(colorbar_label, fontsize=7)
+    cbar.tick_params(labelsize=7)
+
+    ax.set_xlim(110, 155)
+    ax.set_ylim(-45, -10)
+    ax.axis("off")
+
+    if title:
+        ax.set_title(title, fontsize=10, fontweight="bold")
+
+    fig.tight_layout()
+
+    return fig

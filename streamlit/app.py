@@ -1192,10 +1192,7 @@ if t_results.open:
                         APP_DIR = Path(__file__).resolve().parent
 
                         shape_path = (
-                            APP_DIR
-                            / "data"
-                            / "shapes"
-                            / "regions_onshore_elec_s_10.geojson"
+                            APP_DIR / "data" / "shapes" / "australia_states.geojson"
                         )
 
                         try:
@@ -1416,118 +1413,149 @@ if t_results.open:
                     APP_DIR = Path(__file__).resolve().parent
 
                     shape_path = (
-                        APP_DIR
-                        / "data"
-                        / "shapes"
-                        / "regions_onshore_elec_s_10.geojson"
+                        APP_DIR / "data" / "shapes" / "australia_states.geojson"
                     )
 
                     try:
-                        shapes = gpd.read_file(shape_path)
+                        states = gpd.read_file(shape_path)
+
+                        state_maps = []
 
                         for cost_run in selected_runs:
-                            cost_label = label_map.get(
-                                cost_run,
-                                cost_run,
-                            )
-
+                            cost_label = label_map.get(cost_run, cost_run)
                             n_cost = st.session_state.solved_networks[cost_run]
-
-                            st.markdown(f"### Scenario {cost_label}")
 
                             if cost_map == "Electricity (LCOE)":
                                 cost_df, _ = compute_lcoe_by_bus(n_cost)
-
-                                plot_func = plot_lcoe_map_by_bus
-
+                                cost_col = "weighted_lcoe"
+                                weight_col = "dispatch_twh"
+                                output_col = "state_weighted_lcoe"
+                                cbar_label = "Generation-weighted LCOE (AUD/MWh)"
                                 empty_msg = (
                                     f"No LCOE data found for scenario {cost_label}."
                                 )
-
-                                table_title = f"Show cluster-level LCOE table for scenario {cost_label}"
-
+                                table_title = f"Show state-level LCOE table for scenario {cost_label}"
                                 rename_cols = {
-                                    "bus": "Cluster",
-                                    "weighted_lcoe": "Production-weighted LCOE (AUD/MWh)",
-                                    "dispatch_twh": "Dispatch (TWh)",
-                                    "x": "Longitude",
-                                    "y": "Latitude",
+                                    "STATE_NAME": "State",
+                                    output_col: "Generation-weighted LCOE (AUD/MWh)",
+                                    weight_col: "Dispatch (TWh)",
                                 }
 
                             elif cost_map == "H2 from electrolysis (LCOH)":
                                 cost_df, _ = compute_lcoh_by_bus(n_cost)
-
-                                plot_func = plot_lcoh_map_by_bus
-
+                                cost_col = "weighted_lcoh_aud_per_kg"
+                                weight_col = "h2_dispatch_kt"
+                                output_col = "state_weighted_lcoh_aud_per_kg"
+                                cbar_label = "Production-weighted LCOH (AUD/kg H2)"
                                 empty_msg = f"No grid H2 production found for scenario {cost_label}."
-
-                                table_title = f"Show cluster-level LCOH table for scenario {cost_label}"
-
+                                table_title = f"Show state-level LCOH table for scenario {cost_label}"
                                 rename_cols = {
-                                    "cluster": "Cluster",
-                                    "weighted_lcoh_aud_per_kg": "Production-weighted LCOH (AUD/kg H2)",
-                                    "weighted_lcoh_aud_per_mwh": "Production-weighted LCOH (AUD/MWh H2)",
-                                    "h2_dispatch_twh": "Grid H2 production (TWh H2)",
-                                    "h2_dispatch_kt": "Grid H2 production (kt H2)",
-                                    "x": "Longitude",
-                                    "y": "Latitude",
+                                    "STATE_NAME": "State",
+                                    output_col: "Production-weighted LCOH (AUD/kg H2)",
+                                    weight_col: "Grid H2 production (kt H2)",
                                 }
 
                             elif cost_map == "e-Ammonia levelized cost":
                                 cost_df, _ = compute_lco_ammonia_by_bus(n_cost)
-
-                                plot_func = plot_lco_ammonia_map_by_bus
-
+                                cost_col = "weighted_lco_ammonia_aud_per_tonne"
+                                weight_col = "production_kt"
+                                output_col = "state_weighted_lco_ammonia_aud_per_tonne"
+                                cbar_label = (
+                                    "Production-weighted LCO ammonia (AUD/t NH3)"
+                                )
                                 empty_msg = f"No e-ammonia production found for scenario {cost_label}."
-
-                                table_title = f"Show cluster-level e-ammonia cost table for scenario {cost_label}"
-
+                                table_title = f"Show state-level e-ammonia cost table for scenario {cost_label}"
                                 rename_cols = {
-                                    "cluster": "Cluster",
-                                    "weighted_lco_ammonia_aud_per_tonne": "Production-weighted LCOA (AUD/t NH3)",
-                                    "weighted_lco_ammonia_aud_per_mwh": "Production-weighted LCOA (AUD/MWh NH3)",
-                                    "production_twh": "e-ammonia production (TWh)",
-                                    "production_kt": "e-ammonia production (kt NH3)",
-                                    "x": "Longitude",
-                                    "y": "Latitude",
+                                    "STATE_NAME": "State",
+                                    output_col: "Production-weighted LCO ammonia (AUD/t NH3)",
+                                    weight_col: "e-ammonia production (kt NH3)",
                                 }
 
                             elif cost_map == "e-Methanol levelized cost":
                                 cost_df, _ = compute_lco_methanol_by_bus(n_cost)
-
-                                plot_func = plot_lco_methanol_map_by_bus
-
+                                cost_col = "weighted_lco_methanol_aud_per_tonne"
+                                weight_col = "production_kt"
+                                output_col = "state_weighted_lco_methanol_aud_per_tonne"
+                                cbar_label = "Production-weighted LCOMeOH (AUD/t MeOH)"
                                 empty_msg = f"No e-methanol production found for scenario {cost_label}."
-
-                                table_title = f"Show cluster-level e-methanol cost table for scenario {cost_label}"
-
+                                table_title = f"Show state-level e-methanol cost table for scenario {cost_label}"
                                 rename_cols = {
-                                    "cluster": "Cluster",
-                                    "weighted_lco_methanol_aud_per_tonne": "Production-weighted LCOMeOH (AUD/t MeOH)",
-                                    "weighted_lco_methanol_aud_per_mwh": "Production-weighted LCOMeOH (AUD/MWh MeOH)",
-                                    "production_twh": "e-methanol production (TWh)",
-                                    "production_kt": "e-methanol production (kt MeOH)",
-                                    "x": "Longitude",
-                                    "y": "Latitude",
+                                    "STATE_NAME": "State",
+                                    output_col: "Production-weighted LCOMeOH (AUD/t MeOH)",
+                                    weight_col: "e-methanol production (kt MeOH)",
                                 }
 
                             if cost_df.empty:
+                                state_maps.append(
+                                    (cost_label, None, empty_msg, None, None)
+                                )
+                                continue
+
+                            state_costs = aggregate_node_costs_by_state(
+                                node_df=cost_df,
+                                states=states,
+                                cost_col=cost_col,
+                                weight_col=weight_col,
+                                output_cost_col=output_col,
+                            )
+
+                            state_maps.append(
+                                (
+                                    cost_label,
+                                    state_costs,
+                                    empty_msg,
+                                    table_title,
+                                    rename_cols,
+                                )
+                            )
+
+                        all_values = pd.concat(
+                            [
+                                state_costs[output_col].dropna()
+                                for _, state_costs, _, _, _ in state_maps
+                                if state_costs is not None
+                                and output_col in state_costs.columns
+                            ],
+                            ignore_index=True,
+                        )
+
+                        vmin = all_values.quantile(0.05)
+                        vmax = all_values.quantile(0.95)
+
+                        for (
+                            cost_label,
+                            state_costs,
+                            empty_msg,
+                            table_title,
+                            rename_cols,
+                        ) in state_maps:
+                            st.markdown(f"### Scenario {cost_label}")
+
+                            if state_costs is None:
                                 st.warning(empty_msg)
                                 continue
 
-                            fig = plot_func(
-                                cost_df,
-                                shapes,
+                            fig = plot_state_cost_map(
+                                state_costs=state_costs,
+                                value_col=output_col,
+                                colorbar_label=cbar_label,
+                                vmin=vmin,
+                                vmax=vmax,
                             )
 
                             st.pyplot(fig, width="content")
+
+                            table_cols = ["STATE_NAME", output_col, weight_col]
 
                             with st.expander(
                                 table_title,
                                 expanded=False,
                             ):
                                 st.dataframe(
-                                    cost_df.round(2).rename(columns=rename_cols),
+                                    state_costs[table_cols]
+                                    .dropna(subset=[output_col])
+                                    .round(2)
+                                    .rename(columns=rename_cols),
                                     hide_index=True,
                                     width="stretch",
                                 )
@@ -1560,11 +1588,18 @@ if t_results.open:
                         .sum()
                     )
 
+                    active_categories = (
+                        df_plot.groupby("tech_label")["cost_billion"]
+                        .sum()
+                        .loc[lambda s: s.abs() > 1e-6]
+                        .index
+                    )
+
                     categories = [
-                        c
-                        for c in renamed_tech_colors
-                        if c in df_plot["tech_label"].unique()
+                        c for c in renamed_tech_colors if c in active_categories
                     ]
+
+                    df_plot = df_plot[df_plot["tech_label"].isin(categories)]
 
                     chart = (
                         alt.Chart(df_plot)
@@ -1601,6 +1636,87 @@ if t_results.open:
                     )
 
                     st.altair_chart(chart, width="stretch")
+
+                    summary_table = (
+                        df_system[df_system["cost_type"] == system_cost_type]
+                        .pivot_table(
+                            index=["macro_category", "tech_label"],
+                            columns="scenario",
+                            values="cost_billion",
+                            aggfunc="sum",
+                            fill_value=0.0,
+                        )
+                        .reset_index()
+                        .rename(
+                            columns={
+                                "macro_category": "Macro category",
+                                "tech_label": "Technology",
+                            }
+                        )
+                    )
+
+                    scenario_cols = [
+                        c
+                        for c in summary_table.columns
+                        if c not in ["Macro category", "Technology"]
+                    ]
+
+                    summary_table = summary_table[
+                        (summary_table[scenario_cols].abs().sum(axis=1) > 0)
+                    ]
+
+                    with st.expander(
+                        f"Show {system_cost_type.lower()} summary table",
+                        expanded=False,
+                    ):
+                        st.dataframe(
+                            summary_table.round(3),
+                            hide_index=True,
+                            width="stretch",
+                        )
+
+                    detailed_table = (
+                        df_system[df_system["cost_type"] == system_cost_type]
+                        .pivot_table(
+                            index=[
+                                "macro_category",
+                                "tech_label",
+                                "raw_technology",
+                            ],
+                            columns="scenario",
+                            values="cost_billion",
+                            aggfunc="sum",
+                            fill_value=0.0,
+                        )
+                        .reset_index()
+                        .rename(
+                            columns={
+                                "macro_category": "Macro category",
+                                "tech_label": "Category",
+                                "raw_technology": "Technology",
+                            }
+                        )
+                    )
+
+                    scenario_cols = [
+                        c
+                        for c in detailed_table.columns
+                        if c not in ["Macro category", "Category", "Technology"]
+                    ]
+
+                    detailed_table = detailed_table[
+                        (detailed_table[scenario_cols].abs().sum(axis=1) > 0)
+                    ]
+
+                    with st.expander(
+                        f"Show detailed {system_cost_type.lower()} table",
+                        expanded=False,
+                    ):
+                        st.dataframe(
+                            detailed_table.round(3),
+                            hide_index=True,
+                            width="stretch",
+                        )
 
             #            # TECHNICAL COMPARISON
             #
