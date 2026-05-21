@@ -1365,12 +1365,13 @@ if t_results.open:
 
             selected_runs = [run_lookup[label] for label in selected_labels]
 
+            st.write("")
             result_view = st.radio(
                 "Select result view",
                 [
+                    "Commodity cost maps",
                     "Installed capacity",
                     "Dispatch",
-                    "Commodity costs",
                     "System costs",
                     # "Technical comparison",
                     "Economic comparison",
@@ -1383,6 +1384,9 @@ if t_results.open:
                     label_map.get(run, run): st.session_state.solved_networks[run]
                     for run in selected_runs
                 }
+
+                #st.write("---")
+                st.subheader(result_view)
 
                 # INSTALLED CAPACITY
 
@@ -1688,11 +1692,9 @@ if t_results.open:
                                 hide_index=True,
                             )
 
-                # COMMODITY COSTS
+                # COMMODITY COST MAPS
 
-                elif result_view == "Commodity costs":
-                    st.subheader("Cost maps")
-
+                elif result_view == "Commodity cost maps":
                     cost_map = st.radio(
                         "Select cost map",
                         [
@@ -1872,8 +1874,6 @@ if t_results.open:
                 # SYSTEM COSTS
 
                 elif result_view == "System costs":
-                    st.subheader("System costs")
-
                     system_cost_type = st.radio(
                         "Select system cost type",
                         [
@@ -2027,9 +2027,6 @@ if t_results.open:
             # ECONOMIC COMPARISON
 
             if result_view == "Economic comparison":
-
-                st.header("Economic Comparison")
-
                 df = st.session_state.results
                 df = df.rename(columns=label_map)
                 df = df / 1e3

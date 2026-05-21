@@ -861,7 +861,8 @@ def compute_lcoe_by_bus(network: pypsa.Network) -> tuple[pd.DataFrame, pd.DataFr
                     "x": df["x"].iloc[0],
                     "y": df["y"].iloc[0],
                 }
-            )
+            ),
+            include_groups=False,
         )
         .reset_index()
     )
@@ -980,7 +981,8 @@ def compute_lcoh_by_bus(network: pypsa.Network) -> tuple[pd.DataFrame, pd.DataFr
                     "x": df["x"].iloc[0],
                     "y": df["y"].iloc[0],
                 }
-            )
+            ),
+            include_groups=False,
         )
         .reset_index()
     )
@@ -1125,7 +1127,8 @@ def compute_lco_product_by_bus(
                     "x": df["x"].iloc[0],
                     "y": df["y"].iloc[0],
                 }
-            )
+            ),
+            include_groups=False,
         )
         .reset_index()
     )
