@@ -1385,7 +1385,6 @@ if t_results.open:
                     for run in selected_runs
                 }
 
-                #st.write("---")
                 st.subheader(result_view)
 
                 # INSTALLED CAPACITY
