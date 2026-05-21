@@ -24,7 +24,7 @@ def _add_ammonia_store(n, ammonia_buses, costs, store_suffix="ammonia store"):
     """
     Add extendable ammonia storage.
     """
-    n.madd(
+    n.add(
         "Store",
         ammonia_buses.index + f" {store_suffix}",
         bus=ammonia_buses.values,
@@ -52,7 +52,7 @@ def add_grey_ammonia(n, industrial_demand, costs, config, nhours):
     if "grey-ammonia" not in n.carriers.index:
         n.add("Carrier", "grey-ammonia")
 
-    n.madd(
+    n.add(
         "Bus",
         grey_ammonia_bus.values,
         location=nodes,
@@ -69,7 +69,7 @@ def add_grey_ammonia(n, industrial_demand, costs, config, nhours):
         )
         logger.info("Added grey-ammonia stores.")
 
-    n.madd(
+    n.add(
         "Link",
         nodes + " grey Haber-Bosch",
         bus0=nodes,
@@ -95,7 +95,7 @@ def add_grey_ammonia(n, industrial_demand, costs, config, nhours):
         / nhours
     )
 
-    n.madd(
+    n.add(
         "Load",
         grey_ammonia_bus.values,
         bus=grey_ammonia_bus.values,
@@ -132,7 +132,7 @@ def add_grey_ammonia(n, industrial_demand, costs, config, nhours):
             * costs.at["ammonia carbon capture retrofit", "capture_rate"]
         )
 
-        n.madd(
+        n.add(
             "Link",
             smr_cc_index,
             bus0=gas_buses.values,
@@ -174,7 +174,7 @@ def add_e_ammonia(n, industrial_demand, costs, config, nhours):
     if "e-ammonia" not in n.carriers.index:
         n.add("Carrier", "e-ammonia")
 
-    n.madd(
+    n.add(
         "Bus",
         e_ammonia_bus.values,
         location=nodes,
@@ -191,7 +191,7 @@ def add_e_ammonia(n, industrial_demand, costs, config, nhours):
         )
         logger.info("Added e-ammonia stores.")
 
-    n.madd(
+    n.add(
         "Link",
         nodes + " e Haber-Bosch",
         bus0=nodes,
@@ -217,7 +217,7 @@ def add_e_ammonia(n, industrial_demand, costs, config, nhours):
         / nhours
     )
 
-    n.madd(
+    n.add(
         "Load",
         e_ammonia_bus.values,
         bus=e_ammonia_bus.values,
@@ -242,7 +242,7 @@ def add_grey_methanol(n, industrial_demand, costs, config, nhours):
     if "grey-methanol" not in n.carriers.index:
         n.add("Carrier", "grey-methanol")
 
-    n.madd(
+    n.add(
         "Bus",
         grey_methanol_bus.values,
         location=nodes,
@@ -250,7 +250,7 @@ def add_grey_methanol(n, industrial_demand, costs, config, nhours):
     )
     logger.info("Added grey-methanol buses and carrier.")
 
-    n.madd(
+    n.add(
         "Link",
         nodes + " grey methanol synthesis",
         bus0=nodes + " gas",
@@ -275,7 +275,7 @@ def add_grey_methanol(n, industrial_demand, costs, config, nhours):
         / nhours
     )
 
-    n.madd(
+    n.add(
         "Load",
         grey_methanol_bus.values,
         bus=grey_methanol_bus.values,
@@ -302,7 +302,7 @@ def add_e_methanol(n, industrial_demand, costs, config, nhours):
     if "e-methanol" not in n.carriers.index:
         n.add("Carrier", "e-methanol")
 
-    n.madd(
+    n.add(
         "Bus",
         e_methanol_bus.values,
         location=nodes,
@@ -310,7 +310,7 @@ def add_e_methanol(n, industrial_demand, costs, config, nhours):
     )
     logger.info("Added e-methanol buses and carrier.")
 
-    n.madd(
+    n.add(
         "Link",
         nodes + " methanolisation",
         bus0=nodes,
@@ -341,7 +341,7 @@ def add_e_methanol(n, industrial_demand, costs, config, nhours):
         / nhours
     )
 
-    n.madd(
+    n.add(
         "Load",
         e_methanol_bus.values,
         bus=e_methanol_bus.values,
@@ -591,7 +591,7 @@ def add_custom_industry_growth_market(
 
         link_names = product_buses.index + f" {product_carrier} growth export"
 
-        n.madd(
+        n.add(
             "Link",
             link_names,
             bus0=product_buses.values,
