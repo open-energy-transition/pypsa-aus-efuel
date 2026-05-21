@@ -812,6 +812,13 @@ solving:
     skip_iterations: true
     track_iterations: false
     # nhours: 10
+    oetc:
+      name: "pypsa-aus-efuel"
+      authentication_server_url: "https://oetc.openenergytransition.org/"
+      orchestrator_server_url: "https://oetc.openenergytransition.org/"
+      compute_provider: "GCP"
+      cpu_cores: 4
+      disk_space_gb: 20
 
   solver:
     name: gurobi

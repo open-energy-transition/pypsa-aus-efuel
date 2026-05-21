@@ -19,9 +19,15 @@ import numpy as np
 import pandas as pd
 import pypsa
 import requests
+from linopy.remote.oetc import OetcCredentials, OetcHandler, OetcSettings
 from results_helpers import *
 
 import streamlit as st
+
+
+def get_secret(name: str) -> str:
+    """Return a secret from Streamlit secrets or environment variables."""
+    return st.secrets.get(name, os.environ.get(name, ""))
 
 
 def annuity_factor(discount_rate: float, lifetime: int) -> float:
@@ -1211,20 +1217,75 @@ if t_optimization.open:
                     ):
                         n2.sanitize()
 
+                    remote = None
+
                     if solver_name == "OETC":
-                        st.warning(
-                            "The Open Energy Transition Cluster (OETC) is not configured yet. Therefore 'highs' is used."
+                        required_oetc_secrets = [
+                            "OETC_EMAIL",
+                            "OETC_PASSWORD",
+                            "OETC_AUTHENTICATION_SERVER_URL",
+                            "OETC_ORCHESTRATOR_SERVER_URL",
+                        ]
+
+                        missing_oetc_secrets = [
+                            secret
+                            for secret in required_oetc_secrets
+                            if not get_secret(secret)
+                        ]
+
+                        if missing_oetc_secrets:
+                            st.error(
+                                "OETC is selected, but the following required secrets are missing: "
+                                + ", ".join(missing_oetc_secrets)
+                            )
+                            st.stop()
+
+                        solver_options = {
+                            "threads": 4,
+                            "method": 2,
+                            "crossover": 0,
+                            "BarConvTol": 1.0e-6,
+                            "Seed": 123,
+                            "AggFill": 0,
+                            "PreDual": 0,
+                            "GURO_PAR_BARDENSETHRESH": 200,
+                        }
+
+                        remote = OetcHandler(
+                            OetcSettings(
+                                name="pypsa-aus-efuel",
+                                authentication_server_url=get_secret(
+                                    "OETC_AUTHENTICATION_SERVER_URL"
+                                ),
+                                orchestrator_server_url=get_secret(
+                                    "OETC_ORCHESTRATOR_SERVER_URL"
+                                ),
+                                compute_provider="GCP",
+                                cpu_cores=4,
+                                disk_space_gb=20,
+                                credentials=OetcCredentials(
+                                    email=get_secret("OETC_EMAIL"),
+                                    password=get_secret("OETC_PASSWORD"),
+                                ),
+                                solver="gurobi",
+                                solver_options=solver_options,
+                            )
                         )
-                        solver_name = "highs"
+
+                        solver_name = "gurobi"
+
+                    else:
+                        solver_options = {
+                            "solver": "hipo",
+                            "user_objective_scale": -2,
+                            "user_bound_scale": -14,
+                        }
 
                     status, condition = n2.optimize(
                         solver_name=solver_name,
                         assign_all_duals=False,
-                        solver_options={
-                            "solver": "hipo",
-                            "user_objective_scale": -2,
-                            "user_bound_scale": -14,
-                        },
+                        solver_options=solver_options,
+                        remote=remote,
                     )
 
                 if status == "ok":
