@@ -107,13 +107,11 @@ def get_category_carriers(category: str) -> dict[str, list[str]]:
         },
         "Hydrogen": {
             "links": [
-                "grid H2",
-                "grey H2",
-                "blue H2",
-                "H2 Fuel Cell",
-                "H2 pipeline",
-                "H2 pipeline repurposed",
-                "H2 Electrolysis",
+                "Alkaline electrolyzer small",
+                "Alkaline electrolyzer medium",
+                "Alkaline electrolyzer large",
+                "SOEC",
+                "PEM electrolyzer",
             ],
             "stores": [
                 "H2",
@@ -244,7 +242,7 @@ def compute_capacity_by_bus(
     network: pypsa.Network,
     category: str,
 ) -> pd.DataFrame:
-    """Compute optimized installed capacity by cluster and carrier."""
+    """Compute optimized installed/output capacity by physical cluster and carrier."""
     category_carriers = get_category_carriers(category)
     rows = []
 
@@ -297,7 +295,21 @@ def compute_capacity_by_bus(
     capacity = pd.concat(rows, axis=0)
     capacity["carrier"] = capacity["carrier"].map(rename_carrier)
 
-    capacity = capacity.groupby(["cluster", "carrier"], as_index=False)["value"].sum()
+    capacity["plot_cluster"] = (
+        capacity["cluster"]
+        .str.replace(" low voltage", "", regex=False)
+        .str.replace(" grey-ammonia", "", regex=False)
+        .str.replace(" e-ammonia", "", regex=False)
+        .str.replace(" grey-methanol", "", regex=False)
+        .str.replace(" e-methanol", "", regex=False)
+        .str.replace(" grid H2", "", regex=False)
+    )
+
+    capacity = (
+        capacity.groupby(["plot_cluster", "carrier"], as_index=False)["value"]
+        .sum()
+        .rename(columns={"plot_cluster": "cluster"})
+    )
 
     capacity = capacity.merge(
         network.buses[["x", "y"]],
@@ -345,8 +357,9 @@ def plot_capacity_map_by_bus(
     if max_total <= 0:
         return fig
 
-    max_bar_height = 7.0
+    max_bar_height = 8.0
     bar_width = 0.75
+    label_threshold = 15.0 if unit == "GW" else 0.1
 
     carriers = [
         carrier
@@ -359,7 +372,9 @@ def plot_capacity_map_by_bus(
         y = group["y"].iloc[0]
         bottom = y
 
-        group = group.set_index("carrier")
+        group = (
+            group.groupby("carrier", as_index=False)["value"].sum().set_index("carrier")
+        )
 
         for carrier in carriers:
             if carrier not in group.index:
@@ -370,7 +385,9 @@ def plot_capacity_map_by_bus(
             if value <= 0:
                 continue
 
-            height = value / max_total * max_bar_height
+            scale_factor = 1.0 if unit == "GW" else 0.55
+
+            height = value / max_total * max_bar_height * scale_factor
 
             ax.bar(
                 x,
@@ -383,10 +400,10 @@ def plot_capacity_map_by_bus(
                 zorder=5,
             )
 
-            if value >= 15:
+            if value >= label_threshold:
                 ax.text(
                     x + 0.8,
-                    bottom + height / 2,  # center of current segment
+                    bottom + height / 2,
                     f"{value:.1f} {unit}",
                     fontsize=6,
                     color=color_map.get(carrier, "black"),
@@ -844,129 +861,13 @@ def compute_lcoe_by_bus(network: pypsa.Network) -> tuple[pd.DataFrame, pd.DataFr
                     "x": df["x"].iloc[0],
                     "y": df["y"].iloc[0],
                 }
-            )
+            ),
+            include_groups=False,
         )
         .reset_index()
     )
 
     return lcoe_by_bus, lcoe_data
-
-
-def plot_lcoe_map_by_bus(
-    lcoe_by_bus: pd.DataFrame,
-    shapes: gpd.GeoDataFrame,
-    title: str | None = None,
-    ax=None,
-    vmin: float | None = None,
-    vmax: float | None = None,
-):
-    """Plot production-weighted LCOE by electricity cluster over a map background."""
-    if lcoe_by_bus.empty:
-        return None
-
-    shapes = shapes.to_crs("EPSG:4326")
-
-    if vmin is None:
-        vmin = lcoe_by_bus["weighted_lcoe"].quantile(0.05)
-
-    if vmax is None:
-        vmax = lcoe_by_bus["weighted_lcoe"].quantile(0.95)
-
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(5.0, 3.5))
-    else:
-        fig = ax.figure
-
-    # Geographic background only.
-    shapes.plot(
-        ax=ax,
-        facecolor="whitesmoke",
-        edgecolor="0.7",
-        linewidth=0.5,
-        zorder=1,
-    )
-
-    max_dispatch = lcoe_by_bus["dispatch_twh"].max()
-    if max_dispatch > 0:
-        sizes = 200 * np.sqrt(lcoe_by_bus["dispatch_twh"] / max_dispatch)
-    else:
-        sizes = 80
-
-    scatter = ax.scatter(
-        lcoe_by_bus["x"],
-        lcoe_by_bus["y"],
-        c=lcoe_by_bus["weighted_lcoe"],
-        s=sizes,
-        cmap="RdYlGn_r",
-        vmin=vmin,
-        vmax=vmax,
-        marker="o",
-        linewidths=0,
-        edgecolors="none",
-        alpha=1.0,
-        zorder=5,
-    )
-
-    cbar = fig.colorbar(
-        scatter,
-        ax=ax,
-        shrink=0.75,
-        pad=0.02,
-    )
-
-    cbar.set_label(
-        "Generation-weighted LCOE (AUD/MWh)",
-        fontsize=6,
-    )
-
-    cbar.ax.tick_params(labelsize=6)
-
-    # Bubble-size legend for annual generation.
-    legend_values = [
-        lcoe_by_bus["dispatch_twh"].quantile(0.25),
-        lcoe_by_bus["dispatch_twh"].quantile(0.50),
-        lcoe_by_bus["dispatch_twh"].quantile(0.90),
-    ]
-
-    legend_values = [2, 10, 50]
-
-    legend_handles = []
-
-    for value in legend_values:
-        marker_size = 200 * np.sqrt(value / max_dispatch)
-
-        legend_handles.append(
-            ax.scatter(
-                [],
-                [],
-                s=marker_size,
-                color="lightgray",
-                edgecolors="gray",
-                linewidths=0.1,
-                label=f"{value:.1f} TWh",
-            )
-        )
-
-    if legend_handles:
-        ax.legend(
-            handles=legend_handles,
-            title="Annual generation",
-            loc="lower left",
-            frameon=False,
-            fontsize=6,
-            title_fontsize=6,
-            labelspacing=1.4,
-            borderpad=0.8,
-            handletextpad=1.0,
-        )
-
-    ax.set_xlim(110, 155)
-    ax.set_ylim(-45, -10)
-    ax.axis("off")
-
-    fig.tight_layout()
-
-    return fig
 
 
 def compute_lcoh_by_bus(network: pypsa.Network) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -1080,120 +981,13 @@ def compute_lcoh_by_bus(network: pypsa.Network) -> tuple[pd.DataFrame, pd.DataFr
                     "x": df["x"].iloc[0],
                     "y": df["y"].iloc[0],
                 }
-            )
+            ),
+            include_groups=False,
         )
         .reset_index()
     )
 
     return lcoh_by_bus, lcoh_data
-
-
-def plot_lcoh_map_by_bus(
-    lcoh_by_bus: pd.DataFrame,
-    shapes: gpd.GeoDataFrame,
-    title: str | None = None,
-    ax=None,
-    vmin: float | None = None,
-    vmax: float | None = None,
-):
-    """Plot production-weighted LCOH by electricity cluster over a map background."""
-    if lcoh_by_bus.empty:
-        return None
-
-    shapes = shapes.to_crs("EPSG:4326")
-
-    if vmin is None:
-        vmin = lcoh_by_bus["weighted_lcoh_aud_per_kg"].quantile(0.05)
-
-    if vmax is None:
-        vmax = lcoh_by_bus["weighted_lcoh_aud_per_kg"].quantile(0.95)
-
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(5.0, 3.5))
-    else:
-        fig = ax.figure
-
-    shapes.plot(
-        ax=ax,
-        facecolor="whitesmoke",
-        edgecolor="0.7",
-        linewidth=0.5,
-        zorder=1,
-    )
-
-    max_dispatch = lcoh_by_bus["h2_dispatch_kt"].max()
-    if max_dispatch > 0:
-        sizes = 200 * np.sqrt(lcoh_by_bus["h2_dispatch_kt"] / max_dispatch)
-    else:
-        sizes = 80
-
-    scatter = ax.scatter(
-        lcoh_by_bus["x"],
-        lcoh_by_bus["y"],
-        c=lcoh_by_bus["weighted_lcoh_aud_per_kg"],
-        s=sizes,
-        cmap="RdYlGn_r",
-        vmin=vmin,
-        vmax=vmax,
-        marker="o",
-        linewidths=0,
-        edgecolors="none",
-        alpha=1.0,
-        zorder=5,
-    )
-
-    cbar = fig.colorbar(
-        scatter,
-        ax=ax,
-        shrink=0.75,
-        pad=0.02,
-    )
-
-    cbar.set_label(
-        "Production-weighted LCOH (AUD/kg H2)",
-        fontsize=6,
-    )
-
-    cbar.ax.tick_params(labelsize=6)
-
-    legend_values = [2, 10, 50]
-    legend_handles = []
-
-    for value in legend_values:
-        marker_size = 200 * np.sqrt(value / max_dispatch)
-
-        legend_handles.append(
-            ax.scatter(
-                [],
-                [],
-                s=marker_size,
-                color="lightgray",
-                edgecolors="gray",
-                linewidths=0.1,
-                label=f"{value:.0f} kt H2/year",
-            )
-        )
-
-    if legend_handles:
-        ax.legend(
-            handles=legend_handles,
-            title="Annual H2 production",
-            loc="lower left",
-            frameon=False,
-            fontsize=6,
-            title_fontsize=6,
-            labelspacing=1.4,
-            borderpad=0.8,
-            handletextpad=1.0,
-        )
-
-    ax.set_xlim(110, 155)
-    ax.set_ylim(-45, -10)
-    ax.axis("off")
-
-    fig.tight_layout()
-
-    return fig
 
 
 def compute_lco_product_by_bus(
@@ -1333,7 +1127,8 @@ def compute_lco_product_by_bus(
                     "x": df["x"].iloc[0],
                     "y": df["y"].iloc[0],
                 }
-            )
+            ),
+            include_groups=False,
         )
         .reset_index()
     )
@@ -1361,141 +1156,499 @@ def compute_lco_methanol_by_bus(network: pypsa.Network):
     )
 
 
-def plot_lco_product_map_by_bus(
-    product_by_bus: pd.DataFrame,
-    shapes: gpd.GeoDataFrame,
+# SYSTEM COST CONFIGURATION
+
+rename_tech_capex = {
+    # Wind
+    "Onshore Wind": "Wind",
+    "onwind": "Wind",
+    "Offshore Wind (AC)": "Wind",
+    "offwind-ac": "Wind",
+    "Offshore Wind (DC)": "Wind",
+    "offwind-dc": "Wind",
+    # Solar
+    "Solar": "Solar",
+    "solar": "Solar",
+    "solar rooftop": "Solar",
+    "Csp": "Solar",
+    "csp": "Solar",
+    # Fossil generators
+    "Open-Cycle Gas": "Fossil generators",
+    "Combined-Cycle Gas": "Fossil generators",
+    "urban central gas CHP": "Fossil generators",
+    # Fossil fuels / supply
+    "coal": "Fossil fuels",
+    "oil": "Fossil fuels",
+    "gas": "Fossil fuels",
+    # Biomass
+    "biomass": "Biomass fuels",
+    "Biomass": "Biomass fuels",
+    "biomass EOP": "Biomass generators",
+    "urban central solid biomass CHP": "Biomass generators",
+    "solid biomass": "Biomass fuels",
+    "biogas": "Biomass fuels",
+    # Hydro
+    "Run of River": "Hydropower",
+    "ror": "Hydropower",
+    "Pumped Hydro Storage": "Hydropower",
+    "PHS": "Hydropower",
+    "Reservoir & Dam": "Hydropower",
+    "hydro": "Hydropower",
+    # Storage
+    "Battery": "Electricity Storage",
+    "battery": "Electricity Storage",
+    "Battery Storage": "Electricity Storage",
+    "battery storage": "Electricity Storage",
+    "battery charger": "Electricity Storage",
+    "battery discharger": "Electricity Storage",
+    "battery inverter": "Electricity Storage",
+    "home battery": "Electricity Storage",
+    "home battery charger": "Electricity Storage",
+    "home battery discharger": "Electricity Storage",
+    "Li ion": "Electricity Storage",
+    "BEV charger": "Electricity Storage",
+    "grid H2 Store Tank": "Hydrogen Storage",
+    "H2 Store Tank": "Hydrogen Storage",
+    # Transmission
+    "electricity distribution grid": "Power distribution",
+    "AC": "Power transmission",
+    "Ac": "Power transmission",
+    "DC": "Power transmission",
+    "Dc": "Power transmission",
+    "B2B": "Power transmission",
+    "V2G": "Power transmission",
+    "CO2 pipeline": "CO2 transport",
+    "solid biomass transport": "Biomass transport",
+    # Hydrogen & e-fuels
+    "SOEC": "Hydrogen",
+    "PEM electrolyzer": "Hydrogen",
+    "Alkaline electrolyzer large": "Hydrogen",
+    "Alkaline electrolyzer medium": "Hydrogen",
+    "Alkaline electrolyzer small": "Hydrogen",
+    "H2 pipeline": "Hydrogen",
+    "H2 pipeline repurposed": "Hydrogen",
+    "grid H2": "Hydrogen",
+    "H2": "Hydrogen",
+    "grey H2": "Hydrogen",
+    "blue H2": "Hydrogen",
+    "H2 Fuel Cell": "Hydrogen",
+    "Fischer-Tropsch": "e-fuels synthesis",
+    "Haber-Bosch": "e-fuels synthesis",
+    "grey Haber-Bosch": "e-fuels synthesis",
+    "e Haber-Bosch": "e-fuels synthesis",
+    "Sabatier": "e-fuels synthesis",
+    "grey methanol synthesis": "e-fuels synthesis",
+    "e-methanol synthesis": "e-fuels synthesis",
+    "methanol": "e-fuels synthesis",
+    "e-methanol": "e-fuels synthesis",
+    "ammonia": "e-fuels synthesis",
+    "e-ammonia": "e-fuels synthesis",
+    "grey-ammonia": "e-fuels synthesis",
+    "grey-methanol": "e-fuels synthesis",
+    # Industry
+    "SMR": "Industry",
+    "SMR CC": "Industry CC",
+    "gas for industry": "Industry",
+    "solid biomass for industry": "Industry",
+    "naphtha for industry": "Industry",
+    "industry electricity": "Industry",
+    # Carbon capture/storage/emissions
+    "DAC": "DAC",
+    "co2 stored": "CO2 Storage",
+    "co2": "Emissions",
+    "industry coal emissions": "Emissions",
+    "industry oil emissions": "Emissions",
+    "process emissions": "Emissions",
+    "process emissions CC": "Emissions",
+    # Other generators
+    "Nuclear": "Nuclear",
+    "nuclear": "Nuclear",
+    "Geothermal": "Geothermal",
+    "geothermal": "Geothermal",
+    # Demand/end-use
+    "custom H2 demand supply": "End-uses",
+    # Fallback
+    "-": "Others",
+}
+
+rename_tech_opex = rename_tech_capex.copy()
+
+rename_tech_opex.update(
+    {
+        "CCGT": "Fossil generators",
+        "OCGT": "Fossil generators",
+    }
+)
+
+renamed_tech_colors = {
+    "Biofuels synthesis": "#66c2a5",
+    "Emissions": "#7f7f7f",
+    "Fossil generators": "#8c564b",
+    "Fossil fuels": "#a0522d",
+    "Fossil fuels (end uses)": "#5e3b34",
+    "Heating": "#d62728",
+    "Hydrogen": "#1f77b4",
+    "Industry": "#9467bd",
+    "Industry CC": "#373170",
+    "Power transmission": "#cda434",
+    "Power distribution": "#ff7e33",
+    "CO2 transport": "#1d4cdb",
+    "Biomass transport": "#bae38a",
+    "Others": "#c7c7c7",
+    "CO2 Storage": "#94ffea",
+    "Electricity Storage": "#fffd94",
+    "Hydrogen Storage": "#17becf",
+    "Transport": "#ff7f0e",
+    "Biomass generators": "#2ca02c",
+    "Biomass fuels": "#3cb371",
+    "Biomass fuels (end uses)": "#2ca02c",
+    "Geothermal": "#e35812",
+    "Hydropower": "#298c81",
+    "Nuclear": "#e8a9d5",
+    "Solar": "#ffdd57",
+    "Wind": "#a6cee3",
+    "e-fuels synthesis": "#73ffb2",
+    "End-uses": "#5e3b34",
+}
+
+categories_capex = {
+    "Fossil generators": "Power & heat generation",
+    "Biomass generators": "Power & heat generation",
+    "Hydropower": "Power & heat generation",
+    "Nuclear": "Power & heat generation",
+    "Geothermal": "Power & heat generation",
+    "Wind": "Power & heat generation",
+    "Solar": "Power & heat generation",
+    "Heating": "Power & heat generation",
+    "Fossil fuels": "End-uses",
+    "Biomass fuels": "End-uses",
+    "Electricity Storage": "Storage",
+    "CO2 Storage": "Storage",
+    "Hydrogen Storage": "Storage",
+    "Industry": "Industry",
+    "Industry CC": "Industry",
+    "DAC": "DAC",
+    "Power transmission": "Transmission & distribution",
+    "Power distribution": "Transmission & distribution",
+    "CO2 transport": "Transmission & distribution",
+    "Biomass transport": "Transmission & distribution",
+    "Emissions": "Emissions",
+    "Hydrogen": "Hydrogen & e-fuels",
+    "e-fuels synthesis": "Hydrogen & e-fuels",
+    "Biofuels synthesis": "Biofuels synthesis",
+    "End-uses": "End-uses",
+    "Others": "Others",
+}
+
+categories_opex = categories_capex.copy()
+
+
+def assign_macro_category(row, categories_capex, categories_opex):
+    if row["cost_type"] == "Capital expenditure":
+        return categories_capex.get(row["tech_label"], "Others")
+
+    if row["cost_type"] == "Operational expenditure":
+        return categories_opex.get(row["tech_label"], "Others")
+
+    return "Others"
+
+
+def compute_system_costs(network, rename_capex, rename_opex, name_tag):
+    """
+    Compute CAPEX and OPEX including input costs.
+    """
+
+    def clean_raw_technology(series):
+        return (
+            series.astype(str)
+            .str.strip()
+            .replace(
+                {
+                    "Ac": "AC",
+                    "Dc": "DC",
+                    "Coal": "coal",
+                    "Oil": "oil",
+                    "Biomass": "biomass",
+                    "Combined-Cycle Gas": "CCGT",
+                    "Open-Cycle Gas": "OCGT",
+                }
+            )
+        )
+
+    costs_raw = network.statistics()[["Capital Expenditure", "Operational Expenditure"]]
+
+    # CAPEX
+    capex_raw = costs_raw[["Capital Expenditure"]].reset_index()
+
+    carrier_col = "carrier" if "carrier" in capex_raw.columns else capex_raw.columns[1]
+
+    capex_raw["raw_technology"] = clean_raw_technology(capex_raw[carrier_col])
+
+    capex_raw["tech_label"] = (
+        capex_raw[carrier_col].map(rename_capex).fillna(capex_raw[carrier_col])
+    )
+
+    capex_grouped = (
+        capex_raw.groupby(["tech_label", "raw_technology"], as_index=False)[
+            "Capital Expenditure"
+        ]
+        .sum()
+        .rename(columns={"Capital Expenditure": "cost_billion"})
+    )
+
+    capex_grouped["cost_billion"] /= 1e9
+    capex_grouped["cost_type"] = "Capital expenditure"
+    capex_grouped["scenario"] = name_tag
+
+    # OPEX
+    opex_raw = costs_raw[["Operational Expenditure"]].reset_index()
+
+    carrier_col = "carrier" if "carrier" in opex_raw.columns else opex_raw.columns[1]
+
+    opex_raw["raw_technology"] = clean_raw_technology(opex_raw[carrier_col])
+
+    opex_raw["tech_label"] = (
+        opex_raw[carrier_col].map(rename_opex).fillna(opex_raw[carrier_col])
+    )
+
+    opex_grouped = (
+        opex_raw.groupby(["tech_label", "raw_technology"], as_index=False)[
+            "Operational Expenditure"
+        ]
+        .sum()
+        .rename(columns={"Operational Expenditure": "cost_billion"})
+    )
+
+    opex_grouped["cost_billion"] /= 1e9
+    opex_grouped["cost_type"] = "Operational expenditure"
+    opex_grouped["scenario"] = name_tag
+
+    # EXTRA INPUT OPEX
+    if "objective" in network.snapshot_weightings.columns:
+        w = network.snapshot_weightings["objective"]
+    else:
+        w = network.snapshot_weightings["generators"]
+
+    bus_cols = [c for c in network.links.columns if c.startswith("bus")]
+
+    results_extra = []
+
+    for link_id, row in network.links.iterrows():
+        tech = row["carrier"]
+
+        for bcol in bus_cols:
+            bus = row[bcol]
+
+            if pd.isna(bus):
+                continue
+
+            if bus not in network.buses_t.marginal_price.columns:
+                continue
+
+            idx = bcol[3:]
+            pcol = f"p{idx}"
+
+            if pcol not in network.links_t:
+                continue
+
+            if link_id not in network.links_t[pcol]:
+                continue
+
+            flow_ts = network.links_t[pcol][link_id].clip(lower=0)
+
+            if flow_ts.abs().sum() <= 0:
+                continue
+
+            prices = network.buses_t.marginal_price[bus]
+            fuel_cost = (flow_ts * prices * w).sum()
+
+            if fuel_cost <= 0:
+                continue
+
+            results_extra.append(
+                {
+                    "tech_label": rename_opex.get(tech, tech),
+                    "raw_technology": clean_raw_technology(pd.Series([tech])).iloc[0],
+                    "cost_billion": fuel_cost / 1e9,
+                    "cost_type": "Operational expenditure",
+                    "scenario": name_tag,
+                }
+            )
+
+    extra_df = pd.DataFrame(results_extra)
+
+    df_all = pd.concat(
+        [capex_grouped, opex_grouped, extra_df],
+        ignore_index=True,
+    )
+
+    return df_all
+
+
+def build_system_cost_table(networks):
+    """
+    Build aggregated system cost table across scenarios.
+    """
+
+    all_costs = []
+
+    for name_tag, network in networks.items():
+        df = compute_system_costs(
+            network=network,
+            rename_capex=rename_tech_capex,
+            rename_opex=rename_tech_opex,
+            name_tag=name_tag,
+        )
+
+        all_costs.append(df)
+
+    df_all = pd.concat(all_costs, ignore_index=True)
+
+    df_all["tech_label"] = (
+        df_all["tech_label"]
+        .astype(str)
+        .str.replace(r"\s+", " ", regex=True)
+        .str.replace(r"\xa0", " ", regex=True)
+        .str.strip()
+    )
+
+    df_all["macro_category"] = df_all.apply(
+        lambda row: assign_macro_category(
+            row,
+            categories_capex,
+            categories_opex,
+        ),
+        axis=1,
+    )
+
+    return df_all
+
+
+def assign_nodes_to_states(
+    node_df: pd.DataFrame,
+    states: gpd.GeoDataFrame,
+    state_col: str = "STATE_NAME",
+) -> gpd.GeoDataFrame:
+    """Assign node-level results to Australian states using point-in-polygon."""
+    nodes = node_df.dropna(subset=["x", "y"]).copy()
+
+    nodes_gdf = gpd.GeoDataFrame(
+        nodes,
+        geometry=gpd.points_from_xy(nodes["x"], nodes["y"]),
+        crs="EPSG:4326",
+    )
+
+    states = states.to_crs("EPSG:4326")
+
+    nodes_states = gpd.sjoin(
+        nodes_gdf,
+        states[[state_col, "geometry"]],
+        how="left",
+        predicate="within",
+    )
+
+    return nodes_states.dropna(subset=[state_col])
+
+
+def aggregate_node_costs_by_state(
+    node_df: pd.DataFrame,
+    states: gpd.GeoDataFrame,
+    cost_col: str,
+    weight_col: str,
+    output_cost_col: str,
+    state_col: str = "STATE_NAME",
+) -> gpd.GeoDataFrame:
+    """Aggregate node-level commodity costs to states using production-weighted averages."""
+    nodes_states = assign_nodes_to_states(
+        node_df=node_df,
+        states=states,
+        state_col=state_col,
+    )
+
+    rows = []
+
+    for state_name, group in nodes_states.groupby(state_col):
+        weight = group[weight_col]
+
+        if weight.sum() <= 0:
+            continue
+
+        rows.append(
+            {
+                state_col: state_name,
+                output_cost_col: np.average(
+                    group[cost_col],
+                    weights=weight,
+                ),
+                weight_col: weight.sum(),
+            }
+        )
+
+    if not rows:
+        state_costs = pd.DataFrame(columns=[state_col, output_cost_col, weight_col])
+    else:
+        state_costs = pd.DataFrame(rows)
+
+    return states.merge(
+        state_costs,
+        on=state_col,
+        how="left",
+    )
+
+
+def plot_state_cost_map(
+    state_costs: gpd.GeoDataFrame,
     value_col: str,
-    cbar_label: str,
-    legend_title: str,
-    legend_unit: str,
+    colorbar_label: str,
     title: str | None = None,
     ax=None,
     vmin: float | None = None,
     vmax: float | None = None,
 ):
-    """Plot production-weighted product cost by cluster over a map background."""
-    if product_by_bus.empty:
+    """Plot state-level production-weighted commodity costs."""
+    if state_costs.empty or value_col not in state_costs.columns:
         return None
 
-    shapes = shapes.to_crs("EPSG:4326")
+    state_costs = state_costs.to_crs("EPSG:4326")
 
     if vmin is None:
-        vmin = product_by_bus[value_col].quantile(0.05)
+        vmin = state_costs[value_col].quantile(0.05)
 
     if vmax is None:
-        vmax = product_by_bus[value_col].quantile(0.95)
+        vmax = state_costs[value_col].quantile(0.95)
 
     if ax is None:
         fig, ax = plt.subplots(figsize=(5.0, 3.5))
     else:
         fig = ax.figure
 
-    shapes.plot(
+    state_costs.plot(
         ax=ax,
-        facecolor="whitesmoke",
-        edgecolor="0.7",
-        linewidth=0.5,
-        zorder=1,
-    )
-
-    max_dispatch = product_by_bus["production_kt"].max()
-
-    if max_dispatch > 0:
-        sizes = 200 * np.sqrt(product_by_bus["production_kt"] / max_dispatch)
-    else:
-        sizes = 80
-
-    scatter = ax.scatter(
-        product_by_bus["x"],
-        product_by_bus["y"],
-        c=product_by_bus[value_col],
-        s=sizes,
+        column=value_col,
         cmap="RdYlGn_r",
         vmin=vmin,
         vmax=vmax,
-        marker="o",
-        linewidths=0,
-        edgecolors="none",
-        alpha=1.0,
-        zorder=5,
+        legend=True,
+        missing_kwds={
+            "color": "whitesmoke",
+            "edgecolor": "0.7",
+            "label": "No production",
+        },
+        edgecolor="0.4",
+        linewidth=0.5,
     )
 
-    cbar = fig.colorbar(
-        scatter,
-        ax=ax,
-        shrink=0.75,
-        pad=0.02,
-    )
-
-    cbar.set_label(
-        cbar_label,
-        fontsize=6,
-    )
-
-    cbar.ax.tick_params(labelsize=6)
-
-    legend_values = [2, 10, 50]
-    legend_handles = []
-
-    for value in legend_values:
-        marker_size = 200 * np.sqrt(value / max_dispatch)
-
-        legend_handles.append(
-            ax.scatter(
-                [],
-                [],
-                s=marker_size,
-                color="lightgray",
-                edgecolors="gray",
-                linewidths=0.1,
-                label=f"{value:.0f} {legend_unit}/year",
-            )
-        )
-
-    if legend_handles:
-        ax.legend(
-            handles=legend_handles,
-            title=legend_title,
-            loc="lower left",
-            frameon=False,
-            fontsize=6,
-            title_fontsize=6,
-            labelspacing=1.4,
-            borderpad=0.8,
-            handletextpad=1.0,
-        )
+    cbar = fig.axes[-1]
+    cbar.set_ylabel(colorbar_label, fontsize=7)
+    cbar.tick_params(labelsize=7)
 
     ax.set_xlim(110, 155)
     ax.set_ylim(-45, -10)
     ax.axis("off")
 
     if title:
-        ax.set_title(title, fontsize=10)
+        ax.set_title(title, fontsize=10, fontweight="bold")
 
     fig.tight_layout()
 
     return fig
-
-
-def plot_lco_ammonia_map_by_bus(ammonia_by_bus, shapes, title=None):
-    return plot_lco_product_map_by_bus(
-        product_by_bus=ammonia_by_bus,
-        shapes=shapes,
-        value_col="weighted_lco_ammonia_aud_per_tonne",
-        cbar_label="Production-weighted LCOA (AUD/t NH3)",
-        legend_title="Annual e-ammonia production",
-        legend_unit="kt NH3",
-        title=title,
-    )
-
-
-def plot_lco_methanol_map_by_bus(methanol_by_bus, shapes, title=None):
-    return plot_lco_product_map_by_bus(
-        product_by_bus=methanol_by_bus,
-        shapes=shapes,
-        value_col="weighted_lco_methanol_aud_per_tonne",
-        cbar_label="Production-weighted LCOMeOH (AUD/t MeOH)",
-        legend_title="Annual e-methanol production",
-        legend_unit="kt MeOH",
-        title=title,
-    )

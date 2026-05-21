@@ -11,19 +11,19 @@ repos:
     exclude: ^tools/|^pypsa-earth/
 
 - repo: https://github.com/PyCQA/isort
-  rev: 7.0.0
+  rev: 9.0.0a3
   hooks:
   - id: isort
     args: [--profile=black, --filter-files]
 
 - repo: https://github.com/psf/black-pre-commit-mirror
-  rev: 25.12.0
+  rev: 26.5.1
   hooks:
   - id: black
   - id: black-jupyter
 
 - repo: https://github.com/codespell-project/codespell
-  rev: v2.4.1
+  rev: v2.4.2
   hooks:
   - id: codespell
     exclude: ^tools/|^pypsa-earth/
@@ -32,14 +32,14 @@ repos:
     types_or: [python, markdown]
 
 - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
-  rev: v2.15.0
+  rev: v2.16.0
   hooks:
   - id: pretty-format-yaml
     args: [--autofix, --indent, "2", --preserve-quotes]
     exclude: ^tools/|^pypsa-earth/|^configs/config\.yaml$
 
 - repo: https://github.com/adrienverge/yamllint.git
-  rev: v1.37.1
+  rev: v1.38.0
   hooks:
   - id: yamllint
     exclude: ^tools/|^pypsa-earth/|^configs/|^\.pre-commit-config\.yaml$|^\.github/workflows/

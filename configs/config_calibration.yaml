@@ -801,8 +801,8 @@ solving:
     # nhours: 10
 
   solver:
-    name: highs
-    options: highs-hipo
+    name: gurobi
+    options: gurobi-default
 
   solver_options:
     highs-default:

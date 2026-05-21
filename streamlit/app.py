@@ -19,24 +19,7 @@ import numpy as np
 import pandas as pd
 import pypsa
 import requests
-from results_helpers import (
-    compute_annual_flow_by_carrier,
-    compute_capacity_by_bus,
-    compute_capacity_by_carrier,
-    compute_dispatch_annual_totals,
-    compute_dispatch_by_carrier,
-    compute_lco_ammonia_by_bus,
-    compute_lco_methanol_by_bus,
-    compute_lcoe_by_bus,
-    compute_lcoh_by_bus,
-    get_available_dispatch_categories,
-    get_available_result_categories,
-    plot_capacity_map_by_bus,
-    plot_lco_ammonia_map_by_bus,
-    plot_lco_methanol_map_by_bus,
-    plot_lcoe_map_by_bus,
-    plot_lcoh_map_by_bus,
-)
+from results_helpers import *
 
 import streamlit as st
 
@@ -232,7 +215,7 @@ load_data: dict[str, dict[str, int | float | str | list[str]]] = {
 }
 
 
-# -------------------- Helper functions --------------------
+# Helper functions
 def get_snapshots(
     network: pypsa.Network,
     start_day: int = 1,
@@ -393,11 +376,9 @@ st.set_page_config(page_title=f"{title} UI", layout="wide")
 st.title(f"{title} Interactive Manager")
 st.write("Walk through the tabs below from left to the right ...")
 with st.popover("Disclaimer", width="stretch", icon="⚠️"):
-    st.write(
-        """
+    st.write("""
         The content of this document/web page is intended for the exclusive use of **Open Energy Transition**'s client and other contractually agreed recipients. It may only be made available in whole or in part to third parties with the client’s consent and on a non-reliance basis. **Open Energy Transition** is not liable to third parties for the completeness and accuracy of the information provided therein.
-        """
-    )
+        """)
 
 if "n" not in st.session_state:
     st.session_state.n = None
@@ -423,13 +404,14 @@ if "solved_networks" not in st.session_state:
     st.session_state.solved_networks = {}
 if "scenario_metadata" not in st.session_state:
     st.session_state.scenario_metadata = {}
+if "scenario_labels" not in st.session_state:
+    st.session_state.scenario_labels = {}
 if "new_demand_meoh" not in st.session_state:
     st.session_state.new_demand_meoh = None
 if "new_demand_nh3" not in st.session_state:
     st.session_state.new_demand_nh3 = None
 
-
-# --- SIDEBAR ---
+# SIDEBAR
 with st.sidebar:
     st.sidebar.header("Networks")
 
@@ -524,7 +506,7 @@ with st.sidebar:
     df = pd.DataFrame.from_dict(pkgs, orient="index", columns=["Installed Versions"])
     st.dataframe(df)
 
-# --- Tabs
+# Tabs
 tabs = [
     "| 👋 Welcome",
     "| 1. 💰 Economics",
@@ -536,20 +518,18 @@ t_welcome, t_economic, t_demand, t_optimization, t_results = st.tabs(
     tabs, on_change="rerun"
 )
 
-# --- TAB WELCOME
+# TAB WELCOME
 if t_welcome.open:
     with t_welcome:
         st.subheader("Welcome to the PyPSA-AUS-eFuels Interactive Manager!")
-        st.write(
-            f"""
+        st.write(f"""
             Use the sidebar to load your network and set project targets. Then, navigate through the tabs to manage different aspects of your project (economic and demand parameters).
 
             By default it is assumed that {DEFAULT_E_SHARE*100}% of the diesel demand can be reduced by electrification.
             Additionally it is assumed that {DEFAULT_E_SHARE_PRODUCTION*100}% of the remaining diesel and ammonia demand shall be covered by local green production.
             To review and/or adjust the required methanol and/or ammonia demand settings pull down the relevant pull-down box.
             The calculated e-methanol and e-ammonia production values are automatically transferred to the “Demand Parameters” tab, where they can still be manually adjusted before being applied to the network.
-            """
-        )
+            """)
 
         # ----- sectors
         with st.expander(
@@ -800,17 +780,15 @@ if t_welcome.open:
         )
 
         with st.popover("Project Description", width="stretch", icon="📄"):
-            st.write(
-                """
+            st.write("""
                 This application has been developed during a project between **Open Energy Transition** and **Sagax Capital / Keshik Capital** to assess the impact on Australia on local Ammonia and Methanol production.
 
                 The project aims to evaluate the potential for local production of these chemicals using renewable energy sources, and how this does help Australia in its energy transition and resilience.
 
                 **The entire project source is available on GitHub: https://github.com/open-energy-transition/pypsa-aus-efuel.**
-                """
-            )
+                """)
 
-# --- TAB ECONOMIC PARAMETERS
+# TAB ECONOMIC PARAMETERS
 if t_economic.open:
     with t_economic:
         if st.session_state.n is None:
@@ -957,7 +935,7 @@ if t_economic.open:
                     ]
                 )
 
-# --- TAB DEMAND PARAMETERS
+# TAB DEMAND PARAMETERS
 if t_demand.open:
     with t_demand:
         if st.session_state.n is None:
@@ -1103,7 +1081,7 @@ if t_demand.open:
                 df = n.loads[["carrier", "p_set"]]
                 st.dataframe(df[df.index.isin(name_loads)], height=500)
 
-# --- TAB OPTIMIZATION
+# TAB OPTIMIZATION
 if t_optimization.open:
     with t_optimization:
         if st.session_state.n is None:
@@ -1123,11 +1101,7 @@ if t_optimization.open:
             ammonia = demand["grey_ammonia"] + demand["e_ammonia"]
             methanol = demand["grey_methanol"] + demand["e_methanol"]
 
-            with st.expander("Scenario Overview", expanded=False):
-                st.write("**Scenario ID**")
-                st.code(scenario_id, language=None)
-
-                st.write("**Scenario Summary**")
+            with st.expander("Scenario Overview", expanded=True):
                 st.write(scenario_summary)
 
             with st.expander("Configuration", expanded=False):
@@ -1297,8 +1271,13 @@ if t_optimization.open:
                     ):
                         run_name = f"{scenario_id}_r{st.session_state.opt_runs}"
 
+                    scenario_label = str(len(st.session_state.scenario_labels) + 1)
+
                     st.session_state.solved_networks[run_name] = n2
                     st.session_state.scenario_metadata[run_name] = scenario_summary
+                    st.session_state.scenario_labels[run_name] = scenario_label
+
+                    st.info(f"Saved as scenario {scenario_label}.")
 
                     if st.session_state.results is None:
                         cap_df = expanded_cap.to_frame(name=run_name)
@@ -1314,32 +1293,102 @@ if t_optimization.open:
                 else:
                     st.error(f"Solver failed: {condition}")
 
-# ---TAB RESULTS
+# TAB RESULTS
 if t_results.open:
     with t_results:
-        # if st.session_state.results is not None:
         if len(st.session_state.solved_networks) > 0:
             st.header("Results Explorer")
 
-            available_runs = list(st.session_state.solved_networks.keys())
+            if "scenario_metadata" in st.session_state:
+                st.subheader("Scenario Overview")
 
-            selected_runs = st.multiselect(
+                st.caption(
+                    "Hydrogen and hydrogen-based derivative demands are reported in Mtpa."
+                )
+
+                scenario_rows = []
+
+                for k, v in st.session_state.scenario_metadata.items():
+                    run_nr = st.session_state.scenario_labels.get(k, k)
+                    v_split = v.split("|")
+
+                    scenario_rows.append(
+                        {
+                            "Run": run_nr,
+                            "Country": v_split[0].strip(),
+                            "Year": v_split[1].strip(),
+                            "Clusters": v_split[2].replace("clusters", "").strip(),
+                            "Resolution": v_split[3].strip(),
+                            "Cost Setup": v_split[4].strip(),
+                            "H2 Demand": v_split[5]
+                            .replace("Mtpa", "")
+                            .replace("H2: ", "")
+                            .strip(),
+                            "Grey Ammonia": v_split[6]
+                            .replace("Mtpa", "")
+                            .replace("Grey ammonia: ", "")
+                            .strip(),
+                            "e-Ammonia": v_split[7]
+                            .replace("Mtpa", "")
+                            .replace("e-ammonia: ", "")
+                            .strip(),
+                            "Grey Methanol": v_split[8]
+                            .replace("Mtpa", "")
+                            .replace("Grey methanol: ", "")
+                            .strip(),
+                            "e-Methanol": v_split[9]
+                            .replace("Mtpa", "")
+                            .replace("e-methanol: ", "")
+                            .strip(),
+                        }
+                    )
+
+                scenario_df = pd.DataFrame(scenario_rows)
+
+                st.dataframe(
+                    scenario_df,
+                    hide_index=True,
+                    width="stretch",
+                )
+
+            available_runs = list(st.session_state.solved_networks.keys())
+            label_map = st.session_state.scenario_labels
+
+            run_lookup = {label_map.get(run, run): run for run in available_runs}
+
+            selected_labels = st.multiselect(
                 "Select solved scenarios",
-                available_runs,
-                default=available_runs,  # [-1:],
+                list(run_lookup.keys()),
+                default=list(run_lookup.keys()),
                 width="stretch",
             )
 
+            selected_runs = [run_lookup[label] for label in selected_labels]
+
+            st.write("")
             result_view = st.radio(
                 "Select result view",
-                ["Installed capacity", "Dispatch", "Costs"],
+                [
+                    "Commodity cost maps",
+                    "Installed capacity",
+                    "Dispatch",
+                    "System costs",
+                    # "Technical comparison",
+                    "Economic comparison",
+                ],
                 horizontal=True,
             )
 
             if selected_runs:
                 selected_networks = {
-                    run: st.session_state.solved_networks[run] for run in selected_runs
+                    label_map.get(run, run): st.session_state.solved_networks[run]
+                    for run in selected_runs
                 }
+
+                #st.write("---")
+                st.subheader(result_view)
+
+                # INSTALLED CAPACITY
 
                 if result_view == "Installed capacity":
                     category = st.radio(
@@ -1350,10 +1399,21 @@ if t_results.open:
 
                     if category == "Electricity":
                         cap_df = compute_capacity_by_carrier(
-                            selected_networks, category
+                            selected_networks,
+                            category,
                         )
                         y_label = "GW"
-                        result_title = "Electricity - Installed / Expanded Capacity"
+                        result_title = "Electricity - Installed capacity"
+
+                    elif category == "CO2 capture":
+                        cap_df = compute_annual_flow_by_carrier(
+                            selected_networks,
+                            category,
+                            MWH_PER_TONNE,
+                        )
+                        y_label = "Mtpa"
+                        result_title = "CO2 capture - Annual capture"
+
                     else:
                         cap_df = compute_annual_flow_by_carrier(
                             selected_networks,
@@ -1361,12 +1421,13 @@ if t_results.open:
                             MWH_PER_TONNE,
                         )
                         y_label = "Mtpa"
-                        result_title = f"{category} - Annual Production / Capture"
+                        result_title = f"{category} - Annual production capacity"
 
                     st.subheader(result_title)
 
                     if cap_df.empty:
                         st.warning(f"No result data found for {category}.")
+
                     else:
                         chart_df = cap_df.pivot_table(
                             index="scenario",
@@ -1397,6 +1458,7 @@ if t_results.open:
                                 x=alt.X(
                                     "scenario:N",
                                     title="Scenario",
+                                    axis=alt.Axis(labelAngle=0),
                                 ),
                                 y=alt.Y(
                                     "Value:Q",
@@ -1414,7 +1476,10 @@ if t_results.open:
                                 tooltip=[
                                     alt.Tooltip("scenario:N"),
                                     alt.Tooltip("Technology:N"),
-                                    alt.Tooltip("Value:Q", format=",.2f"),
+                                    alt.Tooltip(
+                                        "Value:Q",
+                                        format=",.2f",
+                                    ),
                                 ],
                             )
                             .properties(height=600)
@@ -1422,22 +1487,24 @@ if t_results.open:
 
                         st.altair_chart(chart, width="stretch")
 
-                        BASE_DIR = Path(__file__).resolve().parent.parent
+                        APP_DIR = Path(__file__).resolve().parent
 
                         shape_path = (
-                            BASE_DIR
-                            / "pypsa-earth"
-                            / "resources"
-                            / "bus_regions"
-                            / "regions_onshore_elec_s_10.geojson"
+                            APP_DIR / "data" / "shapes" / "australia_states.geojson"
                         )
 
                         try:
                             shapes = gpd.read_file(shape_path)
+
                             map_unit = "GW" if category == "Electricity" else "Mtpa"
 
                             for capacity_run in selected_runs:
-                                st.markdown(f"**{capacity_run}**")
+                                capacity_label = label_map.get(
+                                    capacity_run,
+                                    capacity_run,
+                                )
+
+                                st.markdown(f"### Scenario {capacity_label}")
 
                                 capacity_by_bus = compute_capacity_by_bus(
                                     st.session_state.solved_networks[capacity_run],
@@ -1446,7 +1513,7 @@ if t_results.open:
 
                                 if capacity_by_bus.empty:
                                     st.warning(
-                                        f"No mapped capacity data found for {capacity_run}."
+                                        f"No mapped capacity data found for scenario {capacity_label}."
                                     )
                                     continue
 
@@ -1455,16 +1522,18 @@ if t_results.open:
                                     shapes,
                                     DISPATCH_COLORS,
                                     unit=map_unit,
-                                    title=f"{category} - Installed / Expanded Capacity",
                                 )
 
-                                st.pyplot(fig, use_container_width=False)
+                                st.pyplot(fig, width="content")
 
                         except Exception as exc:
                             st.error(f"Could not build capacity map: {exc}")
 
                         table_df = (
-                            cap_df.drop(columns=["component"], errors="ignore")
+                            cap_df.drop(
+                                columns=["component"],
+                                errors="ignore",
+                            )
                             .pivot_table(
                                 index=["carrier", "unit"],
                                 columns="scenario",
@@ -1473,15 +1542,25 @@ if t_results.open:
                                 fill_value=0.0,
                             )
                             .reset_index()
-                            .rename(columns={"carrier": "Carrier", "unit": "Unit"})
+                            .rename(
+                                columns={
+                                    "carrier": "Carrier",
+                                    "unit": "Unit",
+                                }
+                            )
                         )
 
-                        with st.expander(f"Show {category} data table", expanded=False):
+                        with st.expander(
+                            f"Show {category} data table",
+                            expanded=False,
+                        ):
                             st.dataframe(
                                 table_df,
                                 width="stretch",
                                 hide_index=True,
                             )
+
+                # DISPATCH
 
                 elif result_view == "Dispatch":
                     dispatch_category = st.radio(
@@ -1490,60 +1569,61 @@ if t_results.open:
                         horizontal=True,
                     )
 
-                    dispatch_run = st.selectbox(
-                        "Select scenario for dispatch",
-                        selected_runs,
-                        index=0,
-                    )
-
-                    n_dispatch = st.session_state.solved_networks[dispatch_run]
-
-                    dispatch_df = compute_dispatch_by_carrier(
-                        n_dispatch,
-                        dispatch_category,
-                    )
-
                     resample_options = [
                         "Original",
                         "Daily mean",
                         "Weekly mean",
                     ]
 
-                    n_snapshots = len(dispatch_df)
+                    for dispatch_run in selected_runs:
+                        dispatch_label = label_map.get(
+                            dispatch_run,
+                            dispatch_run,
+                        )
 
-                    # Select default based on simulation length
-                    if n_snapshots <= 100:
-                        default_index = 0  # Original
+                        n_dispatch = st.session_state.solved_networks[dispatch_run]
 
-                    elif n_snapshots <= 500:
-                        default_index = 1  # Daily mean
+                        dispatch_df = compute_dispatch_by_carrier(
+                            n_dispatch,
+                            dispatch_category,
+                        )
 
-                    else:
-                        default_index = 2  # Weekly mean
+                        n_snapshots = len(dispatch_df)
 
-                    dispatch_resample = st.selectbox(
-                        "Resample dispatch visualization",
-                        resample_options,
-                        index=default_index,
-                    )
+                        if n_snapshots <= 100:
+                            default_index = 0
+                        elif n_snapshots <= 500:
+                            default_index = 1
+                        else:
+                            default_index = 2
 
-                    y_label = "GW" if dispatch_category == "Electricity" else "kt"
+                        dispatch_resample = st.selectbox(
+                            f"Resample dispatch visualization for scenario {dispatch_label}",
+                            resample_options,
+                            index=default_index,
+                            key=f"dispatch_resample_{dispatch_label}_{dispatch_category}",
+                        )
 
-                    st.subheader(f"{dispatch_category} - Dispatch")
-                    st.caption(f"Scenario: {dispatch_run}")
+                        y_label = "GW" if dispatch_category == "Electricity" else "kt"
 
-                    if dispatch_df.empty:
-                        st.warning(f"No dispatch data found for {dispatch_category}.")
-                    else:
+                        st.markdown(f"### Scenario {dispatch_label}")
+
+                        if dispatch_df.empty:
+                            st.warning(
+                                f"No dispatch data found for {dispatch_category}."
+                            )
+                            continue
+
                         plot_dispatch_df = dispatch_df.copy()
 
                         if dispatch_resample == "Daily mean":
                             plot_dispatch_df = plot_dispatch_df.resample("D").mean()
+
                         elif dispatch_resample == "Weekly mean":
                             plot_dispatch_df = plot_dispatch_df.resample("W").mean()
 
                         plot_df = plot_dispatch_df.reset_index().melt(
-                            id_vars=plot_dispatch_df.index.name or "index",
+                            id_vars=(plot_dispatch_df.index.name or "index"),
                             var_name="Technology",
                             value_name="Value",
                         )
@@ -1562,8 +1642,15 @@ if t_results.open:
                             alt.Chart(plot_df)
                             .mark_area()
                             .encode(
-                                x=alt.X(f"{time_col}:T", title="Snapshot"),
-                                y=alt.Y("Value:Q", stack="zero", title=y_label),
+                                x=alt.X(
+                                    f"{time_col}:T",
+                                    title="Snapshot",
+                                ),
+                                y=alt.Y(
+                                    "Value:Q",
+                                    stack="zero",
+                                    title=y_label,
+                                ),
                                 color=alt.Color(
                                     "Technology:N",
                                     title="Technology",
@@ -1573,9 +1660,15 @@ if t_results.open:
                                     ),
                                 ),
                                 tooltip=[
-                                    alt.Tooltip(f"{time_col}:T", title="Snapshot"),
+                                    alt.Tooltip(
+                                        f"{time_col}:T",
+                                        title="Snapshot",
+                                    ),
                                     alt.Tooltip("Technology:N"),
-                                    alt.Tooltip("Value:Q", format=",.2f"),
+                                    alt.Tooltip(
+                                        "Value:Q",
+                                        format=",.2f",
+                                    ),
                                 ],
                             )
                             .properties(height=600)
@@ -1590,7 +1683,7 @@ if t_results.open:
                         )
 
                         with st.expander(
-                            f"Show {dispatch_category} annual totals",
+                            f"Show {dispatch_category} annual totals for scenario {dispatch_label}",
                             expanded=False,
                         ):
                             st.dataframe(
@@ -1599,9 +1692,9 @@ if t_results.open:
                                 hide_index=True,
                             )
 
-                elif result_view == "Costs":
-                    st.subheader("Cost maps")
+                # COMMODITY COST MAPS
 
+                elif result_view == "Commodity cost maps":
                     cost_map = st.radio(
                         "Select cost map",
                         [
@@ -1613,300 +1706,347 @@ if t_results.open:
                         horizontal=True,
                     )
 
-                    cost_run = st.selectbox(
-                        "Select scenario for cost map",
-                        selected_runs,
-                        index=0,
-                    )
-
-                    BASE_DIR = Path(__file__).resolve().parent.parent
+                    APP_DIR = Path(__file__).resolve().parent
 
                     shape_path = (
-                        BASE_DIR
-                        / "pypsa-earth"
-                        / "resources"
-                        / "bus_regions"
-                        / "regions_onshore_elec_s_10.geojson"
+                        APP_DIR / "data" / "shapes" / "australia_states.geojson"
                     )
 
-                    n_cost = st.session_state.solved_networks[cost_run]
-
                     try:
-                        shapes = gpd.read_file(shape_path)
+                        states = gpd.read_file(shape_path)
 
-                        if cost_map == "Electricity (LCOE)":
-                            lcoe_by_bus, lcoe_data = compute_lcoe_by_bus(n_cost)
+                        state_maps = []
 
-                            if lcoe_by_bus.empty:
-                                st.warning("No LCOE data found for this scenario.")
-                            else:
-                                fig = plot_lcoe_map_by_bus(
-                                    lcoe_by_bus,
-                                    shapes,
+                        for cost_run in selected_runs:
+                            cost_label = label_map.get(cost_run, cost_run)
+                            n_cost = st.session_state.solved_networks[cost_run]
+
+                            if cost_map == "Electricity (LCOE)":
+                                cost_df, _ = compute_lcoe_by_bus(n_cost)
+                                cost_col = "weighted_lcoe"
+                                weight_col = "dispatch_twh"
+                                output_col = "state_weighted_lcoe"
+                                cbar_label = "Generation-weighted LCOE (AUD/MWh)"
+                                empty_msg = (
+                                    f"No LCOE data found for scenario {cost_label}."
                                 )
+                                table_title = f"Show state-level LCOE table for scenario {cost_label}"
+                                rename_cols = {
+                                    "STATE_NAME": "State",
+                                    output_col: "Generation-weighted LCOE (AUD/MWh)",
+                                    weight_col: "Dispatch (TWh)",
+                                }
 
-                                st.pyplot(fig, use_container_width=False)
+                            elif cost_map == "H2 from electrolysis (LCOH)":
+                                cost_df, _ = compute_lcoh_by_bus(n_cost)
+                                cost_col = "weighted_lcoh_aud_per_kg"
+                                weight_col = "h2_dispatch_kt"
+                                output_col = "state_weighted_lcoh_aud_per_kg"
+                                cbar_label = "Production-weighted LCOH (AUD/kg H2)"
+                                empty_msg = f"No grid H2 production found for scenario {cost_label}."
+                                table_title = f"Show state-level LCOH table for scenario {cost_label}"
+                                rename_cols = {
+                                    "STATE_NAME": "State",
+                                    output_col: "Production-weighted LCOH (AUD/kg H2)",
+                                    weight_col: "Grid H2 production (kt H2)",
+                                }
 
-                                st.caption(
-                                    "Background regions are shown only for geographic context. "
-                                    "Each point represents one PyPSA-Earth electricity cluster. "
-                                    "Point colour shows production-weighted electricity LCOE. "
-                                    "Point size shows annual electricity generation in the cluster."
+                            elif cost_map == "e-Ammonia levelized cost":
+                                cost_df, _ = compute_lco_ammonia_by_bus(n_cost)
+                                cost_col = "weighted_lco_ammonia_aud_per_tonne"
+                                weight_col = "production_kt"
+                                output_col = "state_weighted_lco_ammonia_aud_per_tonne"
+                                cbar_label = (
+                                    "Production-weighted LCO ammonia (AUD/t NH3)"
                                 )
+                                empty_msg = f"No e-ammonia production found for scenario {cost_label}."
+                                table_title = f"Show state-level e-ammonia cost table for scenario {cost_label}"
+                                rename_cols = {
+                                    "STATE_NAME": "State",
+                                    output_col: "Production-weighted LCO ammonia (AUD/t NH3)",
+                                    weight_col: "e-ammonia production (kt NH3)",
+                                }
 
-                                with st.expander(
-                                    "Show cluster-level LCOE table",
-                                    expanded=False,
-                                ):
-                                    st.dataframe(
-                                        lcoe_by_bus.round(2).rename(
-                                            columns={
-                                                "bus": "Cluster",
-                                                "weighted_lcoe": "Production-weighted LCOE (AUD/MWh)",
-                                                "dispatch_twh": "Dispatch (TWh)",
-                                                "x": "Longitude",
-                                                "y": "Latitude",
-                                            }
-                                        ),
-                                        hide_index=True,
-                                        width="stretch",
-                                    )
+                            elif cost_map == "e-Methanol levelized cost":
+                                cost_df, _ = compute_lco_methanol_by_bus(n_cost)
+                                cost_col = "weighted_lco_methanol_aud_per_tonne"
+                                weight_col = "production_kt"
+                                output_col = "state_weighted_lco_methanol_aud_per_tonne"
+                                cbar_label = "Production-weighted LCOMeOH (AUD/t MeOH)"
+                                empty_msg = f"No e-methanol production found for scenario {cost_label}."
+                                table_title = f"Show state-level e-methanol cost table for scenario {cost_label}"
+                                rename_cols = {
+                                    "STATE_NAME": "State",
+                                    output_col: "Production-weighted LCOMeOH (AUD/t MeOH)",
+                                    weight_col: "e-methanol production (kt MeOH)",
+                                }
 
-                        elif cost_map == "H2 from electrolysis (LCOH)":
-                            lcoh_by_bus, lcoh_data = compute_lcoh_by_bus(n_cost)
-
-                            if lcoh_by_bus.empty:
-                                st.warning(
-                                    "No grid H2 production found for this scenario."
+                            if cost_df.empty:
+                                state_maps.append(
+                                    (cost_label, None, empty_msg, None, None)
                                 )
-                            else:
-                                fig = plot_lcoh_map_by_bus(
-                                    lcoh_by_bus,
-                                    shapes,
-                                )
+                                continue
 
-                                st.pyplot(fig, use_container_width=False)
-
-                                st.caption(
-                                    "Background regions are shown only for geographic context. "
-                                    "Each point represents one PyPSA-Earth electricity cluster. "
-                                    "Point colour shows production-weighted LCOH for grid H2. "
-                                    "Point size shows annual grid H2 production in the cluster. "
-                                    "Electricity input costs for electrolysis are valued using the local marginal electricity price from the optimized network."
-                                )
-
-                                with st.expander(
-                                    "Show cluster-level LCOH table",
-                                    expanded=False,
-                                ):
-                                    st.dataframe(
-                                        lcoh_by_bus.round(2).rename(
-                                            columns={
-                                                "cluster": "Cluster",
-                                                "weighted_lcoh_aud_per_kg": "Production-weighted LCOH (AUD/kg H2)",
-                                                "weighted_lcoh_aud_per_mwh": "Production-weighted LCOH (AUD/MWh H2)",
-                                                "h2_dispatch_twh": "Grid H2 production (TWh H2)",
-                                                "h2_dispatch_kt": "Grid H2 production (kt H2)",
-                                                "x": "Longitude",
-                                                "y": "Latitude",
-                                            }
-                                        ),
-                                        hide_index=True,
-                                        width="stretch",
-                                    )
-
-                        elif cost_map == "e-Ammonia levelized cost":
-                            ammonia_by_bus, ammonia_data = compute_lco_ammonia_by_bus(
-                                n_cost
+                            state_costs = aggregate_node_costs_by_state(
+                                node_df=cost_df,
+                                states=states,
+                                cost_col=cost_col,
+                                weight_col=weight_col,
+                                output_cost_col=output_col,
                             )
 
-                            if ammonia_by_bus.empty:
-                                st.warning(
-                                    "No e-ammonia production found for this scenario."
+                            state_maps.append(
+                                (
+                                    cost_label,
+                                    state_costs,
+                                    empty_msg,
+                                    table_title,
+                                    rename_cols,
                                 )
-                            else:
-                                fig = plot_lco_ammonia_map_by_bus(
-                                    ammonia_by_bus,
-                                    shapes,
-                                )
-
-                                st.pyplot(fig, use_container_width=False)
-
-                                st.caption(
-                                    "Background regions are shown only for geographic context. "
-                                    "Each point represents one PyPSA-Earth electricity cluster. "
-                                    "Point colour shows production-weighted levelized cost of e-ammonia. "
-                                    "Point size shows annual e-ammonia production in the cluster. "
-                                    "Input costs are valued using local marginal prices from the optimized network."
-                                )
-
-                                with st.expander(
-                                    "Show cluster-level e-ammonia cost table",
-                                    expanded=False,
-                                ):
-                                    st.dataframe(
-                                        ammonia_by_bus.round(2).rename(
-                                            columns={
-                                                "cluster": "Cluster",
-                                                "weighted_lco_ammonia_aud_per_tonne": "Production-weighted LCOA (AUD/t NH3)",
-                                                "weighted_lco_ammonia_aud_per_mwh": "Production-weighted LCOA (AUD/MWh NH3)",
-                                                "production_twh": "e-ammonia production (TWh)",
-                                                "production_kt": "e-ammonia production (kt NH3)",
-                                                "x": "Longitude",
-                                                "y": "Latitude",
-                                            }
-                                        ),
-                                        hide_index=True,
-                                        width="stretch",
-                                    )
-
-                        elif cost_map == "e-Methanol levelized cost":
-                            methanol_by_bus, methanol_data = (
-                                compute_lco_methanol_by_bus(n_cost)
                             )
 
-                            if methanol_by_bus.empty:
-                                st.warning(
-                                    "No e-methanol production found for this scenario."
-                                )
-                            else:
-                                fig = plot_lco_methanol_map_by_bus(
-                                    methanol_by_bus,
-                                    shapes,
-                                )
+                        valid_state_maps = [
+                            state_costs
+                            for _, state_costs, _, _, _ in state_maps
+                            if state_costs is not None
+                            and output_col in state_costs.columns
+                            and not state_costs[output_col].dropna().empty
+                        ]
 
-                                st.pyplot(fig, use_container_width=False)
+                        if not valid_state_maps:
+                            st.warning(
+                                "No valid cost data available for the selected scenarios."
+                            )
+                            st.stop()
 
-                                st.caption(
-                                    "Background regions are shown only for geographic context. "
-                                    "Each point represents one PyPSA-Earth electricity cluster. "
-                                    "Point colour shows production-weighted levelized cost of e-methanol. "
-                                    "Point size shows annual e-methanol production in the cluster. "
-                                    "Input costs are valued using local marginal prices from the optimized network."
+                        all_values = pd.concat(
+                            [
+                                state_costs[output_col].dropna()
+                                for state_costs in valid_state_maps
+                            ],
+                            ignore_index=True,
+                        )
+
+                        vmin = all_values.quantile(0.05)
+                        vmax = all_values.quantile(0.95)
+
+                        for (
+                            cost_label,
+                            state_costs,
+                            empty_msg,
+                            table_title,
+                            rename_cols,
+                        ) in state_maps:
+                            st.markdown(f"### Scenario {cost_label}")
+
+                            if state_costs is None:
+                                st.warning(empty_msg)
+                                continue
+
+                            fig = plot_state_cost_map(
+                                state_costs=state_costs,
+                                value_col=output_col,
+                                colorbar_label=cbar_label,
+                                vmin=vmin,
+                                vmax=vmax,
+                            )
+
+                            st.pyplot(fig, width="content")
+
+                            table_cols = ["STATE_NAME", output_col, weight_col]
+
+                            with st.expander(
+                                table_title,
+                                expanded=False,
+                            ):
+                                st.dataframe(
+                                    state_costs[table_cols]
+                                    .dropna(subset=[output_col])
+                                    .round(2)
+                                    .rename(columns=rename_cols),
+                                    hide_index=True,
+                                    width="stretch",
                                 )
-
-                                with st.expander(
-                                    "Show cluster-level e-methanol cost table",
-                                    expanded=False,
-                                ):
-                                    st.dataframe(
-                                        methanol_by_bus.round(2).rename(
-                                            columns={
-                                                "cluster": "Cluster",
-                                                "weighted_lco_methanol_aud_per_tonne": "Production-weighted LCOMeOH (AUD/t MeOH)",
-                                                "weighted_lco_methanol_aud_per_mwh": "Production-weighted LCOMeOH (AUD/MWh MeOH)",
-                                                "production_twh": "e-methanol production (TWh)",
-                                                "production_kt": "e-methanol production (kt MeOH)",
-                                                "x": "Longitude",
-                                                "y": "Latitude",
-                                            }
-                                        ),
-                                        hide_index=True,
-                                        width="stretch",
-                                    )
 
                     except Exception as exc:
                         st.error(f"Could not build cost map: {exc}")
 
-                st.header("Technical Comparison")
-                st.write(
-                    "Only the technologies being different are shown in the table below, while the economic comparison is shown in the chart below."
-                )
-                df = st.session_state.results
-                # don't show economic details in the technical comparison
-                df = df[~df.index.get_level_values(0).str.contains("Economics")]
-                df = df[df.index.get_level_values(0).str.contains("Link")]
-                # only show rows where there is a difference in the values across runs
-                df = df[df.nunique(axis=1) > 1].T
-                st.dataframe(df.T.style.format("{:.1f}"))
-                if "scenario_metadata" in st.session_state:
-                    st.subheader("Scenario Descriptions")
-                    st.write(
-                        """
-                        Below you can find the descriptions for each optimized scenario.
-                        Demand for hydrogen and hydrogen-based derivatives are given in Mtpa (million ton per annum).
-                        """
+                # SYSTEM COSTS
+
+                elif result_view == "System costs":
+                    system_cost_type = st.radio(
+                        "Select system cost type",
+                        [
+                            "Capital expenditure",
+                            "Operational expenditure",
+                        ],
+                        horizontal=True,
                     )
 
-                    df = pd.DataFrame(
-                        columns=[
-                            "Run",
-                            "Country",
-                            "Year",
-                            "Clusters",
-                            "Resolution",
-                            "Cost Setup",
-                            "H2 Demand",
-                            "Grey Ammonia",
-                            "e-Ammonia",
-                            "Grey Methanol",
-                            "e-Methanol",
-                        ]
+                    df_system = build_system_cost_table(selected_networks)
+
+                    df_plot = (
+                        df_system[df_system["cost_type"] == system_cost_type]
+                        .groupby(
+                            ["scenario", "tech_label"],
+                            as_index=False,
+                        )["cost_billion"]
+                        .sum()
                     )
-                    run_nr = 1
-                    for k, v in st.session_state.scenario_metadata.items():
-                        (
-                            col1,
-                            col2,
-                            col3,
-                            col4,
-                            col5,
-                            col6,
-                            col7,
-                            col8,
-                            col9,
-                            col10,
-                            col11,
-                        ) = st.columns(11, vertical_alignment="top")
-                        v_split = v.split("|")
-                        st.markdown(f"- **Run {run_nr}**: {k}")
-                        new_row = {
-                            "Run": run_nr,
-                            "Country": v_split[0],
-                            "Year": v_split[1],
-                            "Clusters": v_split[2].replace("clusters", ""),
-                            "Resolution": v_split[3],
-                            "Cost Setup": v_split[4],
-                            "H2 Demand": v_split[5]
-                            .replace("Mtpa", "")
-                            .replace("H2: ", ""),
-                            "Grey Ammonia": v_split[6]
-                            .replace("Mtpa", "")
-                            .replace("Grey ammonia: ", ""),
-                            "e-Ammonia": v_split[7]
-                            .replace("Mtpa", "")
-                            .replace("e-ammonia: ", ""),
-                            "Grey Methanol": v_split[8]
-                            .replace("Mtpa", "")
-                            .replace("Grey methanol: ", ""),
-                            "e-Methanol": v_split[9]
-                            .replace("Mtpa", "")
-                            .replace("e-methanol: ", ""),
-                        }
-                        df.loc[len(df)] = new_row
-                        run_nr += 1
 
-                    st.dataframe(df, hide_index=True)
+                    active_categories = (
+                        df_plot.groupby("tech_label")["cost_billion"]
+                        .sum()
+                        .loc[lambda s: s.abs() > 1e-6]
+                        .index
+                    )
 
-                st.header("Economic Comparison")
+                    categories = [
+                        c for c in renamed_tech_colors if c in active_categories
+                    ]
+
+                    df_plot = df_plot[df_plot["tech_label"].isin(categories)]
+
+                    chart = (
+                        alt.Chart(df_plot)
+                        .mark_bar()
+                        .encode(
+                            x=alt.X(
+                                "scenario:N",
+                                title="Scenario",
+                                axis=alt.Axis(labelAngle=0),
+                            ),
+                            y=alt.Y(
+                                "cost_billion:Q",
+                                title="Annual system cost (Billion AUD/year)",
+                                stack="zero",
+                            ),
+                            color=alt.Color(
+                                "tech_label:N",
+                                title="Technology",
+                                scale=alt.Scale(
+                                    domain=categories,
+                                    range=[renamed_tech_colors[c] for c in categories],
+                                ),
+                            ),
+                            tooltip=[
+                                "scenario",
+                                "tech_label",
+                                alt.Tooltip(
+                                    "cost_billion:Q",
+                                    format=",.2f",
+                                ),
+                            ],
+                        )
+                        .properties(height=600)
+                    )
+
+                    st.altair_chart(chart, width="stretch")
+
+                    summary_table = (
+                        df_system[df_system["cost_type"] == system_cost_type]
+                        .pivot_table(
+                            index=["macro_category", "tech_label"],
+                            columns="scenario",
+                            values="cost_billion",
+                            aggfunc="sum",
+                            fill_value=0.0,
+                        )
+                        .reset_index()
+                        .rename(
+                            columns={
+                                "macro_category": "Macro category",
+                                "tech_label": "Technology",
+                            }
+                        )
+                    )
+
+                    scenario_cols = [
+                        c
+                        for c in summary_table.columns
+                        if c not in ["Macro category", "Technology"]
+                    ]
+
+                    summary_table = summary_table[
+                        (summary_table[scenario_cols].abs().sum(axis=1) > 0)
+                    ]
+
+                    with st.expander(
+                        f"Show {system_cost_type.lower()} summary table",
+                        expanded=False,
+                    ):
+                        st.dataframe(
+                            summary_table.round(3),
+                            hide_index=True,
+                            width="stretch",
+                        )
+
+                    detailed_table = (
+                        df_system[df_system["cost_type"] == system_cost_type]
+                        .pivot_table(
+                            index=[
+                                "macro_category",
+                                "tech_label",
+                                "raw_technology",
+                            ],
+                            columns="scenario",
+                            values="cost_billion",
+                            aggfunc="sum",
+                            fill_value=0.0,
+                        )
+                        .reset_index()
+                        .rename(
+                            columns={
+                                "macro_category": "Macro category",
+                                "tech_label": "Category",
+                                "raw_technology": "Technology",
+                            }
+                        )
+                    )
+
+                    scenario_cols = [
+                        c
+                        for c in detailed_table.columns
+                        if c not in ["Macro category", "Category", "Technology"]
+                    ]
+
+                    detailed_table = detailed_table[
+                        (detailed_table[scenario_cols].abs().sum(axis=1) > 0)
+                    ]
+
+                    with st.expander(
+                        f"Show detailed {system_cost_type.lower()} table",
+                        expanded=False,
+                    ):
+                        st.dataframe(
+                            detailed_table.round(3),
+                            hide_index=True,
+                            width="stretch",
+                        )
+
+            # ECONOMIC COMPARISON
+
+            if result_view == "Economic comparison":
                 df = st.session_state.results
-                df = df / 1e3  # convert to million AUD
-                # only show economic details
+                df = df.rename(columns=label_map)
+                df = df / 1e3
+
                 df = df[df.index.get_level_values(0).str.contains("Economics")].round(1)
-                df = df.reset_index().drop(columns=["component"])
-                df = df.set_index("carrier")
+
+                df = df.reset_index().drop(columns=["component"]).set_index("carrier")
+
                 st.bar_chart(
                     df.T,
-                    x_label="Runs",
+                    x_label="Scenario",
                     y_label="Annual Cost (Million AUD)",
                     horizontal=True,
                 )
+
         else:
             st.info(
                 "Please load a network via the left sidebar and run an optimization to see results here ..."
             )
-            st.write(
-                """
+
+            st.write("""
                 After running an optimization, you will see a detailed breakdown of the expanded capacities and economic outcomes for each technology, allowing you to assess the impact of your parameter adjustments on the network's performance and costs.
-                """
-            )
+                """)
