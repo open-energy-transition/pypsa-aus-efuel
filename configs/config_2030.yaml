@@ -184,7 +184,7 @@ base_network:
   min_voltage_rebase_voltage: 132000 # [V] minimum voltage in base network
 
 load_options:
-  ssp: "ssp2-2.6" # shared socio-economic pathway (GDP and population growth) scenario to consider
+  source: "gegis" # shared socio-economic pathway (GDP and population growth) scenario to consider
   weather_year: 2013 # Load scenarios available with different weather year (different renewable potentials)
   # 2011, 2013, and 2018 are available
   prediction_year: 2030 # Load scenarios available with different prediction year (GDP, population)
@@ -730,6 +730,7 @@ sector:
   # ------------------- ELECTRICITY DISTRIBUTION GRID -------------------
 
   electricity_distribution_grid: true # adds low voltage buses and shifts AC loads, BEVs, heat pumps, and resistive heaters, micro CHPs to low voltage buses if technologies are present
+  enable_electricity_connection_cost: false # adds electricity grid connection costs to fixed capital costs for solar and onwind generators in prepare_sector_network.
   solar_rooftop: # adds distribution side customer rooftop PV (only work if electricity_distribution_grid: true)
     enable: true
     kW_per_m2: 0.1
