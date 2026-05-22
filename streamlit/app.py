@@ -485,17 +485,24 @@ with st.sidebar:
             max_upload_size=5,
         )
 
-        if uploaded_file is not None and st.session_state.network_loaded is False:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".nc") as tmp_file:
-                tmp_file.write(uploaded_file.getvalue())
-                tmp_path = tmp_file.name
+        if "uploaded_network_name" not in st.session_state:
+            st.session_state.uploaded_network_name = None
 
-            with st.spinner("Loading network..."):
-                n = pypsa.Network(tmp_path)
-                register_loaded_network(n)
+        if uploaded_file is not None:
+            if uploaded_file.name != st.session_state.uploaded_network_name:
+                with tempfile.NamedTemporaryFile(
+                    delete=False, suffix=".nc"
+                ) as tmp_file:
+                    tmp_file.write(uploaded_file.getvalue())
+                    tmp_path = tmp_file.name
 
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
+                with st.spinner("Loading network..."):
+                    n = pypsa.Network(tmp_path)
+                    register_loaded_network(n)
+                    st.session_state.uploaded_network_name = uploaded_file.name
+
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
 
     if st.session_state.network_loaded:
         show_statistics(st.session_state.n)
