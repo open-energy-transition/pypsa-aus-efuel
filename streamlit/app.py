@@ -75,7 +75,7 @@ tech_data: dict[str, dict[str, int | float | str]] = {
         "cc": investment_cost(153711.113765, 0.044, 35),
         "fixom": 0.013,
         "mc": 1,
-        "dr": 4.62,
+        "dr": default_dr,
         "label": "Solar PV Rooftop",
     },
     "solar": {
@@ -83,7 +83,7 @@ tech_data: dict[str, dict[str, int | float | str]] = {
         "cc": investment_cost(127897.547320, 0.044, 35),
         "fixom": 0.0151,
         "mc": 1,
-        "dr": 4.38,
+        "dr": default_dr,
         "label": "Solar PV",
     },
     "onwind": {
@@ -91,7 +91,7 @@ tech_data: dict[str, dict[str, int | float | str]] = {
         "cc": investment_cost(844078.4, 0.07, 27),
         "fixom": 0.0208,
         "mc": 2,
-        "dr": 5.19,
+        "dr": default_dr,
         "label": "Onshore Wind",
     },
     "offwind-ac": {
