@@ -95,6 +95,14 @@ tech_data: dict[str, dict[str, int | float | str]] = {
     },
 }
 
+ELECTROLYZER_LINK_CARRIERS = [
+    "Alkaline electrolyzer small",
+    "Alkaline electrolyzer medium",
+    "Alkaline electrolyzer large",
+    "SOEC",
+    "PEM electrolyzer",
+]
+
 MWH_PER_TONNE: dict[str, float] = {
     "diesel": 11.9,
     "custom_h2": 33.0,
@@ -818,6 +826,7 @@ if t_welcome.open:
                 **The entire project source is available on GitHub: https://github.com/open-energy-transition/pypsa-aus-efuel.**
                 """)
 
+
 # TAB ECONOMIC PARAMETERS
 if t_economic.open:
     with t_economic:
@@ -831,10 +840,12 @@ if t_economic.open:
 
             n = st.session_state.n
             g = n.generators
+
             with st.expander("Selected Economic Parameters", expanded=True):
                 st.write(
                     "Choose Capital Cost and Marginal Cost to be used for your case:"
                 )
+
                 old_lt = {}
                 old_dr = {}
                 old_ui_dr = {}
@@ -845,26 +856,35 @@ if t_economic.open:
                 old_mc = {}
                 old_ui_mc = {}
                 new_mc = {}
-                # Discount rates are stored in the PyPSA network as fractions
-                # (e.g. 0.07 for 7%), while the Streamlit UI displays percentages.
+
                 for d in tech_data:
-                    old_lt_value = g.loc[g.carrier.str.startswith(d), "lifetime"].mean()
+                    if d == "electrolysis":
+                        component = n.links
+                        mask = component.carrier.isin(ELECTROLYZER_LINK_CARRIERS)
+                    else:
+                        component = g
+                        mask = component.carrier.str.startswith(d, na=False)
 
-                    if pd.isna(old_lt_value) or not np.isfinite(old_lt_value):
-                        old_lt_value = tech_data[d]["lt"]
+                    if "discount_rate" not in component.columns:
+                        component["discount_rate"] = st.session_state.dr / 100
 
-                    old_lt[d] = old_lt_value
-                    old_dr_fraction = replace_nan(
-                        g.loc[g.carrier.str.startswith(d), "discount_rate"].mean(),
-                        tech_data[d]["dr"] / 100,
+                    old_lt[d] = replace_nan(
+                        component.loc[mask, "lifetime"].mean(),
+                        tech_data[d]["lt"],
                     )
-                    old_dr[d] = old_dr_fraction * 100
+                    old_dr[d] = (
+                        replace_nan(
+                            component.loc[mask, "discount_rate"].mean(),
+                            tech_data[d]["dr"] / 100,
+                        )
+                        * 100
+                    )
                     old_cc[d] = replace_nan(
-                        g.loc[g.carrier.str.startswith(d), "capital_cost"].mean(),
+                        component.loc[mask, "capital_cost"].mean(),
                         investment_cost(tech_data[d]["cc"], old_dr[d], old_lt[d]),
                     )
                     old_mc[d] = replace_nan(
-                        g.loc[g.carrier.str.startswith(d), "marginal_cost"].mean(),
+                        component.loc[mask, "marginal_cost"].mean(),
                         tech_data[d]["mc"],
                     )
 
@@ -879,7 +899,6 @@ if t_economic.open:
 
                     with col2:
                         old_ui_dr[d] = round_multiple(old_dr[d], 0.1)
-
                         new_dr[d] = st.slider(
                             label=f"dr_{tech_data[d]['label']}",
                             label_visibility="collapsed",
@@ -891,11 +910,7 @@ if t_economic.open:
                         )
 
                     with col3:
-                        initial_cc = investment_cost(old_cc[d], new_dr[d], old_lt[d])
-                        st.session_state.setdefault(f"initial_cc_{d}", initial_cc)
-
                         old_ui_cc[d] = investment_cost(old_cc[d], new_dr[d], old_lt[d])
-
                         new_cc[d] = st.slider(
                             label=f"cc_{tech_data[d]['label']}",
                             label_visibility="collapsed",
@@ -908,7 +923,6 @@ if t_economic.open:
 
                     with col4:
                         old_ui_mc[d] = round_multiple(old_mc[d], 0.1)
-
                         new_mc[d] = st.slider(
                             label=f"mc_{tech_data[d]['label']}",
                             label_visibility="collapsed",
@@ -918,32 +932,35 @@ if t_economic.open:
                             step=0.1,
                             format="%.1f AUD/MWh",
                         )
+
                 st.write(
                     f"Remark: It is assumed to have a fixed O&M with {default_om}%/year for each technology!"
                 )
 
             if st.button("Apply New Costs"):
-                g["discount_rate"] = g.get("discount_rate", st.session_state.dr)
-                g.loc[g.discount_rate.isnull(), "discount_rate"] = (
-                    st.session_state.dr / 100
-                )
-
                 for d in tech_data:
-                    if len(g.carrier[g.carrier == d]):
-                        # don't change 'lifetime' for now
-                        g.loc[g.carrier.str.startswith(d), "discount_rate"] = (
-                            new_dr[d] / 100
-                        )
-                        g.loc[g.carrier.str.startswith(d), "capital_cost"] = (
-                            new_cc[d]
-                            * annuity_factor(new_dr[d] / 100, tech_data[d]["lt"])
-                            * (1 + default_om / 100)
-                        )
-                        g.loc[g.carrier.str.startswith(d), "marginal_cost"] = new_mc[d]
-                        g.loc[g.carrier.str.startswith(d), "overnight_cost"] = new_cc[d]
-                        g.loc[g.carrier.str.startswith(d), "fom_cost"] = (
-                            new_cc[d] * default_om / 100
-                        )
+                    if d == "electrolysis":
+                        component = n.links
+                        mask = component.carrier.isin(ELECTROLYZER_LINK_CARRIERS)
+                    else:
+                        component = g
+                        mask = component.carrier.str.startswith(d, na=False)
+
+                    if not mask.any():
+                        continue
+
+                    if "discount_rate" not in component.columns:
+                        component["discount_rate"] = st.session_state.dr / 100
+
+                    component.loc[mask, "discount_rate"] = new_dr[d] / 100
+                    component.loc[mask, "capital_cost"] = (
+                        new_cc[d]
+                        * annuity_factor(new_dr[d] / 100, tech_data[d]["lt"])
+                        * (1 + default_om / 100)
+                    )
+                    component.loc[mask, "marginal_cost"] = new_mc[d]
+                    component.loc[mask, "overnight_cost"] = new_cc[d]
+                    component.loc[mask, "fom_cost"] = new_cc[d] * default_om / 100
 
                 st.session_state.costs_modified = any(
                     not np.isclose(new_dr[d], old_ui_dr[d])
@@ -951,21 +968,43 @@ if t_economic.open:
                     or not np.isclose(new_mc[d], old_ui_mc[d])
                     for d in tech_data
                 )
+
                 st.success("Updated details for mentioned technologies ...")
                 st.write(
-                    "Remark: in this table the column capital_cost refers to annuity plus fixed O&M costs."
+                    "Remark: in these table the column capital_cost refers to annuity plus fixed O&M costs."
                 )
-                st.write(
+
+                st.write("Updated generator costs")
+                st.dataframe(
                     g[
                         [
+                            "carrier",
                             "capital_cost",
                             "marginal_cost",
                             "discount_rate",
                             "overnight_cost",
                             "fom_cost",
                         ]
-                    ]
+                    ],
+                    height=400,
                 )
+
+                st.write("Updated electrolyzer link costs")
+                st.dataframe(
+                    n.links.loc[
+                        n.links.carrier.isin(ELECTROLYZER_LINK_CARRIERS),
+                        [
+                            "carrier",
+                            "capital_cost",
+                            "marginal_cost",
+                            "discount_rate",
+                            "overnight_cost",
+                            "fom_cost",
+                        ],
+                    ],
+                    height=400,
+                )
+
 
 # TAB DEMAND PARAMETERS
 if t_demand.open:
