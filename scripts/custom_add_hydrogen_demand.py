@@ -88,7 +88,7 @@ def add_custom_hydrogen_demand(n, config, nhours):
             f"{list(existing_links)}"
         )
 
-    n.madd(
+    n.add(
         "Link",
         link_names,
         bus0=h2_buses,
