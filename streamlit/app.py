@@ -10,6 +10,7 @@ to assess the impact of the adjustments on the network's costs.
 
 import os
 import tempfile
+import time
 from importlib.metadata import version
 from pathlib import Path
 
@@ -1308,20 +1309,41 @@ if t_optimization.open:
                             "user_bound_scale": -14,
                         }
 
+                    started_at = pd.Timestamp.now(tz="Europe/Rome").strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
+                    start_time = time.perf_counter()
+
+                    st.info(f"Optimization started at {started_at}.")
+
                     try:
-                        status, condition = n2.optimize(
-                            solver_name=solver_name,
-                            assign_all_duals=False,
-                            solver_options=solver_options,
-                            remote=remote,
-                        )
+                        with st.spinner("Solving network..."):
+                            status, condition = n2.optimize(
+                                solver_name=solver_name,
+                                assign_all_duals=False,
+                                solver_options=solver_options,
+                                remote=remote,
+                            )
 
                     except Exception as exc:
-                        st.error(f"Optimization failed: {exc}")
+                        elapsed_s = time.perf_counter() - start_time
+                        st.error(
+                            f"Optimization failed after {elapsed_s / 60:.1f} minutes: {exc}"
+                        )
                         st.stop()
 
-                if status == "ok":
-                    st.success(f"Optimization finished: {condition}")
+                    elapsed_s = time.perf_counter() - start_time
+
+                    if status == "ok":
+                        st.success(
+                            f"Optimization finished: {condition}. "
+                            f"Elapsed time: {elapsed_s / 60:.1f} minutes."
+                        )
+                    else:
+                        st.warning(
+                            f"Optimization finished with status={status}, condition={condition}. "
+                            f"Elapsed time: {elapsed_s / 60:.1f} minutes."
+                        )
 
                     # calculate the annual costs for importing e-fuels otherwise
                     if new_cost is None or new_multiplier is None:
@@ -1383,8 +1405,6 @@ if t_optimization.open:
                     st.session_state.results = cap_df
 
                     st.write("Check the 'Results' tab for details.")
-                else:
-                    st.error(f"Solver failed: {condition}")
 
 # TAB RESULTS
 if t_results.open:
