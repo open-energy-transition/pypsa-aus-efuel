@@ -506,6 +506,13 @@ with st.sidebar:
     df = pd.DataFrame.from_dict(pkgs, orient="index", columns=["Installed Versions"])
     st.dataframe(df)
 
+    import inspect
+
+    import results_helpers
+
+    st.write("results_helpers:", results_helpers.__file__)
+    st.code(str(inspect.signature(plot_capacity_map_by_bus)))
+
 # Tabs
 tabs = [
     "| 👋 Welcome",
