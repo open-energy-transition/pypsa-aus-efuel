@@ -27,7 +27,10 @@ import streamlit as st
 
 def get_secret(name: str) -> str:
     """Return a secret from Streamlit secrets or environment variables."""
-    return st.secrets.get(name, os.environ.get(name, ""))
+    try:
+        return st.secrets.get(name, os.environ.get(name, ""))
+    except st.errors.StreamlitSecretNotFoundError:
+        return os.environ.get(name, "")
 
 
 def configure_gurobi_wls() -> None:
