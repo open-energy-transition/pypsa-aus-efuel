@@ -1165,12 +1165,15 @@ if t_optimization.open:
                         horizontal=True,
                     )
 
-                with col2:
-                    months = st.multiselect(
-                        "Select months to consider:",
-                        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-                        default=[1],
-                    )
+                if run_mode != "Full Year":
+                    with col2:
+                        months = st.multiselect(
+                            "Select months to consider:",
+                            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+                            default=[1],
+                        )
+                else:
+                    months = list(range(1, 13))
 
                 with col3:
                     if run_mode == "Week per Month":
@@ -1187,7 +1190,7 @@ if t_optimization.open:
                 solver_name = st.radio(
                     "Select the solver to use for optimization:",
                     ["highs", "OETC"],
-                    index=0,
+                    index=1,
                     horizontal=True,
                 )
 
