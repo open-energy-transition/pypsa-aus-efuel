@@ -432,42 +432,9 @@ with st.sidebar:
         else:
             g["discount_rate"] = g["discount_rate"].apply(to_fraction_discount_rate)
 
-    def show_tech_debug(n: pypsa.Network) -> None:
-        """Show matched generator technologies for debugging loaded networks."""
-        g = n.generators
-        tech_debug = []
-
-        for d in tech_data:
-            mask = g.carrier.str.startswith(d, na=False)
-            matched = g.loc[mask]
-
-            tech_debug.append(
-                {
-                    "tech_key": d,
-                    "label": tech_data[d]["label"],
-                    "matched_generators": len(matched),
-                    "matched_carriers": ", ".join(sorted(matched.carrier.unique())),
-                    "lifetime_mean": (
-                        matched["lifetime"].mean() if len(matched) else None
-                    ),
-                    "discount_rate_mean": (
-                        matched["discount_rate"].mean() if len(matched) else None
-                    ),
-                    "capital_cost_mean": (
-                        matched["capital_cost"].mean() if len(matched) else None
-                    ),
-                    "marginal_cost_mean": (
-                        matched["marginal_cost"].mean() if len(matched) else None
-                    ),
-                }
-            )
-
-        st.dataframe(pd.DataFrame(tech_debug), width="stretch")
-
     def register_loaded_network(n: pypsa.Network) -> None:
         """Store a loaded network in Streamlit session state."""
         normalize_generator_discount_rates(n)
-        show_tech_debug(n)
 
         st.session_state.n = n
         st.session_state.costs_modified = False
