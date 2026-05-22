@@ -189,7 +189,7 @@ load_options:
   # 2011, 2013, and 2018 are available
   prediction_year: 2030 # Load scenarios available with different prediction year (GDP, population)
   # 2030, 2040, 2050, and 2100 are available
-  scale: 1 # scales all load time-series, i.e. 2 = doubles load
+  scale: 1.18 # scales all load time-series, i.e. 2 = doubles load
 
 co2_budget:
   enable: true
