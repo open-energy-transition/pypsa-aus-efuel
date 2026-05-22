@@ -1598,10 +1598,18 @@ if t_results.open:
                                     )
                                     continue
 
+                                n_map = st.session_state.solved_networks[capacity_run]
+
+                                map_network = None
+
+                                if category == "Electricity":
+                                    map_network = n_map
+
                                 fig = plot_capacity_map_by_bus(
                                     capacity_by_bus,
                                     shapes,
                                     DISPATCH_COLORS,
+                                    network=map_network,
                                     unit=map_unit,
                                 )
 

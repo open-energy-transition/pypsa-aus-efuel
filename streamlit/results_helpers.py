@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pypsa
+from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
 
@@ -328,6 +329,7 @@ def plot_capacity_map_by_bus(
     capacity_by_bus: pd.DataFrame,
     shapes: gpd.GeoDataFrame,
     color_map: dict[str, str],
+    network: pypsa.Network | None = None,
     unit: str = "GW",
     title: str | None = None,
     ax=None,
@@ -350,6 +352,55 @@ def plot_capacity_map_by_bus(
         linewidth=0.5,
         zorder=1,
     )
+    if network is not None and unit == "GW":
+        line_scale = 5e3
+
+        # Electricity transmission
+        for _, line in network.lines.iterrows():
+            if line.get("s_nom_opt", 0.0) <= 0:
+                continue
+
+            bus0 = line["bus0"]
+            bus1 = line["bus1"]
+
+            if bus0 not in network.buses.index or bus1 not in network.buses.index:
+                continue
+
+            x0, y0 = network.buses.loc[bus0, ["x", "y"]]
+            x1, y1 = network.buses.loc[bus1, ["x", "y"]]
+
+            ax.plot(
+                [x0, x1],
+                [y0, y1],
+                color="teal",
+                linewidth=line["s_nom_opt"] / line_scale,
+                alpha=0.8,
+                zorder=2,
+            )
+
+        dc_links = network.links[network.links["carrier"] == "DC"]
+
+        for _, link in dc_links.iterrows():
+            if link.get("p_nom_opt", 0.0) <= 0:
+                continue
+
+            bus0 = link["bus0"]
+            bus1 = link["bus1"]
+
+            if bus0 not in network.buses.index or bus1 not in network.buses.index:
+                continue
+
+            x0, y0 = network.buses.loc[bus0, ["x", "y"]]
+            x1, y1 = network.buses.loc[bus1, ["x", "y"]]
+
+            ax.plot(
+                [x0, x1],
+                [y0, y1],
+                color="turquoise",
+                linewidth=link["p_nom_opt"] / line_scale,
+                alpha=0.8,
+                zorder=3,
+            )
 
     totals = capacity_by_bus.groupby("cluster")["value"].sum()
     max_total = totals.max()
@@ -425,14 +476,58 @@ def plot_capacity_map_by_bus(
     ]
 
     if legend_handles:
-        ax.legend(
+        tech_legend = ax.legend(
             handles=legend_handles,
             title="Technology",
+            title_fontproperties={"weight": "bold", "size": 7},
             loc="center left",
-            bbox_to_anchor=(1.20, 0.5),
+            bbox_to_anchor=(1.20, 0.65),
             frameon=False,
             fontsize=6,
-            title_fontsize=6,
+        )
+        ax.add_artist(tech_legend)
+
+    if network is not None:
+        line_handles = [
+            Line2D(
+                [],
+                [],
+                color="teal",
+                linewidth=5e3 / 5e3,
+                label="AC 5 GW",
+            ),
+            Line2D(
+                [],
+                [],
+                color="teal",
+                linewidth=10e3 / 5e3,
+                label="AC 10 GW",
+            ),
+            Line2D(
+                [],
+                [],
+                color="turquoise",
+                linewidth=2e3 / 5e3,
+                label="DC 2 GW",
+            ),
+            Line2D(
+                [],
+                [],
+                color="turquoise",
+                linewidth=5e3 / 5e3,
+                label="DC 5 GW",
+            ),
+        ]
+
+        ax.legend(
+            handles=line_handles,
+            title="Transmission",
+            loc="center left",
+            bbox_to_anchor=(1.23, 0.28),
+            frameon=False,
+            fontsize=6,
+            title_fontproperties={"weight": "bold", "size": 7},
+            borderaxespad=1.2,
         )
 
     ax.set_xlim(110, 155)
