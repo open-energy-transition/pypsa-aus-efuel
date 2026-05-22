@@ -1262,28 +1262,33 @@ if t_optimization.open:
                             "GURO_PAR_BARDENSETHRESH": 200,
                         }
 
-                        remote = OetcHandler(
-                            OetcSettings(
-                                name="pypsa-aus-efuel",
-                                authentication_server_url=get_secret(
-                                    "OETC_AUTHENTICATION_SERVER_URL"
-                                ),
-                                orchestrator_server_url=get_secret(
-                                    "OETC_ORCHESTRATOR_SERVER_URL"
-                                ),
-                                compute_provider="GCP",
-                                cpu_cores=4,
-                                disk_space_gb=20,
-                                credentials=OetcCredentials(
-                                    email=get_secret("OETC_EMAIL"),
-                                    password=get_secret("OETC_PASSWORD"),
-                                ),
-                                solver="gurobi",
-                                solver_options=solver_options,
+                        try:
+                            remote = OetcHandler(
+                                OetcSettings(
+                                    name="pypsa-aus-efuel",
+                                    authentication_server_url=get_secret(
+                                        "OETC_AUTHENTICATION_SERVER_URL"
+                                    ),
+                                    orchestrator_server_url=get_secret(
+                                        "OETC_ORCHESTRATOR_SERVER_URL"
+                                    ),
+                                    compute_provider="GCP",
+                                    cpu_cores=4,
+                                    disk_space_gb=20,
+                                    credentials=OetcCredentials(
+                                        email=get_secret("OETC_EMAIL"),
+                                        password=get_secret("OETC_PASSWORD"),
+                                    ),
+                                    solver="gurobi",
+                                    solver_options=solver_options,
+                                )
                             )
-                        )
 
-                        solver_name = "gurobi"
+                            solver_name = "gurobi"
+
+                        except Exception as exc:
+                            st.error(f"Failed to initialize OETC remote backend: {exc}")
+                            st.stop()
 
                     else:
                         solver_options = {
@@ -1292,12 +1297,17 @@ if t_optimization.open:
                             "user_bound_scale": -14,
                         }
 
-                    status, condition = n2.optimize(
-                        solver_name=solver_name,
-                        assign_all_duals=False,
-                        solver_options=solver_options,
-                        remote=remote,
-                    )
+                    try:
+                        status, condition = n2.optimize(
+                            solver_name=solver_name,
+                            assign_all_duals=False,
+                            solver_options=solver_options,
+                            remote=remote,
+                        )
+
+                    except Exception as exc:
+                        st.error(f"Optimization failed: {exc}")
+                        st.stop()
 
                 if status == "ok":
                     st.success(f"Optimization finished: {condition}")
