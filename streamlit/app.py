@@ -50,7 +50,7 @@ tech_data: dict[str, dict[str, int | float | str]] = {
         "cc": investment_cost(153711.113765, 0.044, 35),
         "fixom": 0.013,
         "mc": 1,
-        "dr": 4.62,
+        "dr": default_dr,
         "label": "Solar PV Rooftop",
     },
     "solar": {
@@ -58,7 +58,7 @@ tech_data: dict[str, dict[str, int | float | str]] = {
         "cc": investment_cost(127897.547320, 0.044, 35),
         "fixom": 0.0151,
         "mc": 1,
-        "dr": 4.38,
+        "dr": default_dr,
         "label": "Solar PV",
     },
     "onwind": {
@@ -66,7 +66,7 @@ tech_data: dict[str, dict[str, int | float | str]] = {
         "cc": investment_cost(844078.4, 0.07, 27),
         "fixom": 0.0208,
         "mc": 2,
-        "dr": 5.19,
+        "dr": default_dr,
         "label": "Onshore Wind",
     },
     "offwind-ac": {
@@ -231,7 +231,7 @@ def get_snapshots(
 
 
 def replace_nan(x: float, def_value: int = 0):
-    return x if not np.isnan(x) else def_value
+    return x if pd.notna(x) and np.isfinite(x) else def_value
 
 
 def round_multiple(number: float, multiple: float = 50.0):
@@ -415,6 +415,57 @@ if "new_demand_nh3" not in st.session_state:
 with st.sidebar:
     st.sidebar.header("Networks")
 
+    def normalize_generator_discount_rates(n: pypsa.Network) -> None:
+        """Ensure generator discount rates exist and are stored as fractions."""
+        g = n.generators
+
+        if "discount_rate" not in g.columns:
+            g["discount_rate"] = st.session_state.dr / 100
+        else:
+            g["discount_rate"] = g["discount_rate"].apply(to_fraction_discount_rate)
+
+    def show_tech_debug(n: pypsa.Network) -> None:
+        """Show matched generator technologies for debugging loaded networks."""
+        g = n.generators
+        tech_debug = []
+
+        for d in tech_data:
+            mask = g.carrier.str.startswith(d, na=False)
+            matched = g.loc[mask]
+
+            tech_debug.append(
+                {
+                    "tech_key": d,
+                    "label": tech_data[d]["label"],
+                    "matched_generators": len(matched),
+                    "matched_carriers": ", ".join(sorted(matched.carrier.unique())),
+                    "lifetime_mean": (
+                        matched["lifetime"].mean() if len(matched) else None
+                    ),
+                    "discount_rate_mean": (
+                        matched["discount_rate"].mean() if len(matched) else None
+                    ),
+                    "capital_cost_mean": (
+                        matched["capital_cost"].mean() if len(matched) else None
+                    ),
+                    "marginal_cost_mean": (
+                        matched["marginal_cost"].mean() if len(matched) else None
+                    ),
+                }
+            )
+
+        st.dataframe(pd.DataFrame(tech_debug), width="stretch")
+
+    def register_loaded_network(n: pypsa.Network) -> None:
+        """Store a loaded network in Streamlit session state."""
+        normalize_generator_discount_rates(n)
+        show_tech_debug(n)
+
+        st.session_state.n = n
+        st.session_state.costs_modified = False
+        st.session_state.network_loaded = True
+        st.success("Network loaded successfully!")
+
     with st.expander("Default PyPSA Network", expanded=True):
         zenodo_record_id = st.text_input("Zenodo Record ID", "20049009", disabled=True)
         zenodo_file_name = st.text_input(
@@ -429,34 +480,24 @@ with st.sidebar:
             file_info = next(
                 (f for f in res["files"] if f["key"] == zenodo_file_name), None
             )
+
             if file_info:
                 SAVE_DIR = "./data"
                 if not os.path.exists(SAVE_DIR):
                     os.makedirs(SAVE_DIR)
+
                 download_url = file_info["links"]["self"]
-                file_data = requests.get(download_url).content
-                save_path = os.path.join(SAVE_DIR, zenodo_file_name)
+                tmp_path = os.path.join(SAVE_DIR, zenodo_file_name)
+
                 with requests.get(download_url, stream=True) as r:
                     r.raise_for_status()
-                    with open(save_path, "wb") as f:
+                    with open(tmp_path, "wb") as f:
                         for chunk in r.iter_content(chunk_size=8192):
                             f.write(chunk)
 
-                tmp_path = f"{SAVE_DIR}/{zenodo_file_name}"
                 n = pypsa.Network(tmp_path)
-                g = n.generators
-                if "discount_rate" not in g.columns:
-                    g["discount_rate"] = st.session_state.dr / 100
-                else:
-                    g["discount_rate"] = g["discount_rate"].apply(
-                        to_fraction_discount_rate
-                    )
-                st.session_state.n = n
-                st.session_state.costs_modified = False
-                st.session_state.network_loaded = True
-                st.success("Network loaded successfully!")
+                register_loaded_network(n)
 
-                # Cleanup the temp file
                 if os.path.exists(tmp_path):
                     os.remove(tmp_path)
             else:
@@ -464,31 +505,20 @@ with st.sidebar:
 
     with st.expander("Local PyPSA-AUS Network", expanded=False):
         uploaded_file = st.file_uploader(
-            "Choose a PyPSA NetCDF file", type=["nc"], max_upload_size=5  # 5 MB limit
+            "Choose a PyPSA NetCDF file",
+            type=["nc"],
+            max_upload_size=5,
         )
 
         if uploaded_file is not None and st.session_state.network_loaded is False:
-            # PyPSA needs a file path, so we save the uploaded bytes to a temporary file
             with tempfile.NamedTemporaryFile(delete=False, suffix=".nc") as tmp_file:
                 tmp_file.write(uploaded_file.getvalue())
                 tmp_path = tmp_file.name
 
-            # 2. Load the Network
             with st.spinner("Loading network..."):
                 n = pypsa.Network(tmp_path)
-                g = n.generators
-                if "discount_rate" not in g.columns:
-                    g["discount_rate"] = st.session_state.dr / 100
-                else:
-                    g["discount_rate"] = g["discount_rate"].apply(
-                        to_fraction_discount_rate
-                    )
-                st.session_state.n = n
-                st.session_state.costs_modified = False
-                st.session_state.network_loaded = True
-                st.success("Network loaded successfully!")
+                register_loaded_network(n)
 
-            # Cleanup the temp file
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
 
@@ -818,10 +848,12 @@ if t_economic.open:
                 # Discount rates are stored in the PyPSA network as fractions
                 # (e.g. 0.07 for 7%), while the Streamlit UI displays percentages.
                 for d in tech_data:
-                    old_lt[d] = replace_nan(
-                        g.loc[g.carrier.str.startswith(d), "lifetime"].mean(),
-                        tech_data[d]["lt"],
-                    )
+                    old_lt_value = g.loc[g.carrier.str.startswith(d), "lifetime"].mean()
+
+                    if pd.isna(old_lt_value) or not np.isfinite(old_lt_value):
+                        old_lt_value = tech_data[d]["lt"]
+
+                    old_lt[d] = old_lt_value
                     old_dr_fraction = replace_nan(
                         g.loc[g.carrier.str.startswith(d), "discount_rate"].mean(),
                         tech_data[d]["dr"] / 100,
@@ -1094,8 +1126,10 @@ if t_optimization.open:
 
             st.header("Run Optimization")
 
-            scenario_id = build_scenario_id()
-            scenario_summary = build_scenario_summary()
+            network_clusters = infer_network_clusters(n)
+
+            scenario_id = build_scenario_id(clusters=network_clusters)
+            scenario_summary = build_scenario_summary(clusters=network_clusters)
             demand = get_current_demand_values()
 
             ammonia = demand["grey_ammonia"] + demand["e_ammonia"]
@@ -1109,7 +1143,7 @@ if t_optimization.open:
 
                 col1.metric("Country", "Australia")
                 col2.metric("Planning year", "2030")
-                col3.metric("Clusters", "10")
+                col3.metric("Clusters", str(network_clusters))
                 col4.metric("Resolution", "3h")
 
                 col1, col2, col3, col4 = st.columns(4)
