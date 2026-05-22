@@ -30,6 +30,17 @@ def get_secret(name: str) -> str:
     return st.secrets.get(name, os.environ.get(name, ""))
 
 
+def configure_gurobi_wls() -> None:
+    """Configure Gurobi WLS credentials from secrets or environment variables."""
+    for name in ["GRB_LICENSEID", "GRB_WLSACCESSID", "GRB_WLSSECRET"]:
+        value = get_secret(name)
+        if value:
+            os.environ[name] = str(value)
+
+
+configure_gurobi_wls()
+
+
 def annuity_factor(discount_rate: float, lifetime: int) -> float:
     return discount_rate / (1 - (1 + discount_rate) ** -lifetime)
 
