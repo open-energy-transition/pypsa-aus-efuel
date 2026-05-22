@@ -1623,11 +1623,46 @@ if t_results.open:
                         horizontal=True,
                     )
 
+                    dispatch_scope = st.radio(
+                        "Select dispatch aggregation",
+                        ["National", "By state"],
+                        horizontal=True,
+                    )
+
                     resample_options = [
                         "Original",
                         "Daily mean",
                         "Weekly mean",
                     ]
+
+                    APP_DIR = Path(__file__).resolve().parent
+                    shape_path = (
+                        APP_DIR / "data" / "shapes" / "australia_states.geojson"
+                    )
+
+                    states = None
+                    selected_state = None
+
+                    if dispatch_scope == "By state":
+                        try:
+                            states = gpd.read_file(shape_path)
+                            state_dispatch_all = compute_dispatch_by_carrier_and_state(
+                                st.session_state.solved_networks[selected_runs[0]],
+                                dispatch_category,
+                                states,
+                            )
+
+                            available_states = sorted(
+                                state_dispatch_all["state"].dropna().unique()
+                            )
+
+                            selected_state = st.selectbox(
+                                "Select state",
+                                available_states,
+                            )
+                        except Exception as exc:
+                            st.error(f"Could not load state shapes: {exc}")
+                            st.stop()
 
                     for dispatch_run in selected_runs:
                         dispatch_label = label_map.get(
@@ -1637,10 +1672,32 @@ if t_results.open:
 
                         n_dispatch = st.session_state.solved_networks[dispatch_run]
 
-                        dispatch_df = compute_dispatch_by_carrier(
-                            n_dispatch,
-                            dispatch_category,
-                        )
+                        if dispatch_scope == "National":
+                            dispatch_df = compute_dispatch_by_carrier(
+                                n_dispatch,
+                                dispatch_category,
+                            )
+
+                        else:
+                            state_dispatch = compute_dispatch_by_carrier_and_state(
+                                n_dispatch,
+                                dispatch_category,
+                                states,
+                            )
+
+                            if state_dispatch.empty:
+                                dispatch_df = pd.DataFrame()
+
+                            else:
+                                dispatch_df = (
+                                    state_dispatch[
+                                        state_dispatch["state"] == selected_state
+                                    ]
+                                    .drop(columns=["state"])
+                                    .set_index("snapshot")
+                                )
+
+                                dispatch_df.index = pd.to_datetime(dispatch_df.index)
 
                         n_snapshots = len(dispatch_df)
 
@@ -1655,16 +1712,26 @@ if t_results.open:
                             f"Resample dispatch visualization for scenario {dispatch_label}",
                             resample_options,
                             index=default_index,
-                            key=f"dispatch_resample_{dispatch_label}_{dispatch_category}",
+                            key=f"dispatch_resample_{dispatch_label}_{dispatch_category}_{dispatch_scope}_{selected_state}",
                         )
 
                         y_label = "GW" if dispatch_category == "Electricity" else "kt"
 
-                        st.markdown(f"### Scenario {dispatch_label}")
+                        if dispatch_scope == "National":
+                            st.markdown(f"### Scenario {dispatch_label}")
+                        else:
+                            st.markdown(
+                                f"### Scenario {dispatch_label} - {selected_state}"
+                            )
 
                         if dispatch_df.empty:
                             st.warning(
-                                f"No dispatch data found for {dispatch_category}."
+                                f"No dispatch data found for {dispatch_category}"
+                                + (
+                                    f" in {selected_state}."
+                                    if dispatch_scope == "By state"
+                                    else "."
+                                )
                             )
                             continue
 
