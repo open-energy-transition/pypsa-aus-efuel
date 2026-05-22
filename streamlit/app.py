@@ -19,7 +19,12 @@ import numpy as np
 import pandas as pd
 import pypsa
 import requests
-from linopy.remote.oetc import OetcCredentials, OetcHandler, OetcSettings
+from linopy.remote.oetc import (
+    ComputeProvider,
+    OetcCredentials,
+    OetcHandler,
+    OetcSettings,
+)
 from results_helpers import *
 
 import streamlit as st
@@ -1275,7 +1280,7 @@ if t_optimization.open:
                                     orchestrator_server_url=get_secret(
                                         "OETC_ORCHESTRATOR_SERVER_URL"
                                     ),
-                                    compute_provider="GCP",
+                                    compute_provider=ComputeProvider.GCP,
                                     cpu_cores=4,
                                     disk_space_gb=20,
                                     credentials=OetcCredentials(
