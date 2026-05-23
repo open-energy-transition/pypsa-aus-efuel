@@ -533,7 +533,7 @@ def plot_capacity_map_by_bus(
             handles=line_handles,
             title="Transmission",
             loc="center left",
-            bbox_to_anchor=(1.23, 0.28),
+            bbox_to_anchor=(1.23, 0.23),
             frameon=False,
             fontsize=6,
             title_fontproperties={"weight": "bold", "size": 7},
