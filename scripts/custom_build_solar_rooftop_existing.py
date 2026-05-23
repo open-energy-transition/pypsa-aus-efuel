@@ -118,11 +118,11 @@ def detect_capacity_column(df: pd.DataFrame, base_year: int) -> str | None:
     """
     Detect a direct cumulative capacity column for the requested base year.
 
-    Preferred choice is the December column for the requested year.
+    The CER SGU monthly columns are monthly additions, not cumulative values,
+    so they must not be used as direct cumulative capacity columns.
     """
     candidates = [
-        f"Dec {base_year} - Rated Power Output In kW",
-        f"December {base_year} - Rated Power Output In kW",
+        f"Total Rated Power Output In kW",
     ]
 
     for col in candidates:
@@ -156,7 +156,7 @@ def build_cumulative_capacity_by_postcode(
 
     postcode_col = detect_postcode_column(df)
     historic_col = "Historic Total Rated Power Output In kW (2001 - 2010)"
-    direct_capacity_col = detect_capacity_column(df, base_year)
+    direct_capacity_col = None
 
     if historic_col not in df.columns and direct_capacity_col is None:
         raise KeyError(

@@ -12,6 +12,16 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
 
+def infer_network_clusters(network: pypsa.Network) -> int:
+    """Infer number of AC buses/clusters from the loaded network."""
+    if "carrier" in network.buses.columns:
+        ac_buses = network.buses.index[network.buses.carrier == "AC"]
+        if len(ac_buses) > 0:
+            return len(ac_buses)
+
+    return len(network.buses)
+
+
 def get_snapshot_weightings(n: pypsa.Network) -> pd.Series:
     """Return the best available snapshot weighting series."""
     if "generators" in n.snapshot_weightings.columns:
