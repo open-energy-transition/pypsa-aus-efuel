@@ -791,6 +791,197 @@ def compute_dispatch_by_carrier(
     return pd.concat(frames, axis=1)  # kt/h
 
 
+def compute_dispatch_by_carrier_and_state(
+    n: pypsa.Network,
+    category: str,
+    states: gpd.GeoDataFrame,
+    state_col: str = "STATE_NAME",
+) -> pd.DataFrame:
+    """Compute dispatch by carrier and Australian state."""
+    if category == "Electricity":
+        bus_col_by_component = {
+            "generators": "bus",
+            "storage_units": "bus",
+            "links": "bus1",
+        }
+
+    elif category in ["Hydrogen", "Ammonia / Methanol"]:
+        bus_col_by_component = {
+            "links": "bus1",
+        }
+
+    else:
+        return pd.DataFrame()
+
+    dispatch_df = compute_dispatch_by_carrier(n, category)
+
+    if dispatch_df.empty:
+        return pd.DataFrame()
+
+    states = states.to_crs("EPSG:4326")
+
+    bus_df = n.buses.reset_index()
+    bus_df = bus_df.rename(columns={bus_df.columns[0]: "bus"})
+
+    bus_states = assign_nodes_to_states(
+        node_df=bus_df,
+        states=states,
+        state_col=state_col,
+    )
+
+    bus_state_map = bus_states.set_index("bus")[state_col].to_dict()
+    frames = []
+
+    if category == "Electricity":
+        gen_carriers = [
+            "solar",
+            "solar rooftop",
+            "onwind",
+            "offwind-ac",
+            "offwind-dc",
+            "ror",
+        ]
+
+        gens = n.generators[n.generators.carrier.isin(gen_carriers)]
+        available = gens.index.intersection(n.generators_t.p.columns)
+
+        for state in sorted(set(bus_state_map.values())):
+            state_buses = {bus for bus, s in bus_state_map.items() if s == state}
+            state_assets = gens.loc[gens.bus.isin(state_buses)].index.intersection(
+                available
+            )
+
+            if len(state_assets) == 0:
+                continue
+
+            df = (
+                n.generators_t.p[state_assets]
+                .clip(lower=0)
+                .groupby(n.generators.loc[state_assets, "carrier"], axis=1)
+                .sum()
+                .rename(columns=rename_carrier)
+                / 1e3
+            )
+
+            df["state"] = state
+            frames.append(df)
+
+        storage_units = n.storage_units[n.storage_units.carrier.isin(["PHS", "hydro"])]
+        available = storage_units.index.intersection(n.storage_units_t.p.columns)
+
+        for state in sorted(set(bus_state_map.values())):
+            state_buses = {bus for bus, s in bus_state_map.items() if s == state}
+            state_assets = storage_units.loc[
+                storage_units.bus.isin(state_buses)
+            ].index.intersection(available)
+
+            if len(state_assets) == 0:
+                continue
+
+            df = (
+                n.storage_units_t.p[state_assets]
+                .clip(lower=0)
+                .groupby(n.storage_units.loc[state_assets, "carrier"], axis=1)
+                .sum()
+                .rename(columns=rename_carrier)
+                / 1e3
+            )
+
+            df["state"] = state
+            frames.append(df)
+
+        link_carriers = [
+            "OCGT",
+            "CCGT",
+            "coal",
+            "lignite",
+            "oil",
+            "biomass",
+            "battery discharger",
+        ]
+
+        links = n.links[n.links.carrier.isin(link_carriers)]
+        if "p1" in n.links_t:
+            available = links.index.intersection(n.links_t.p1.columns)
+
+            for state in sorted(set(bus_state_map.values())):
+                state_buses = {bus for bus, s in bus_state_map.items() if s == state}
+                state_assets = links.loc[
+                    links.bus1.isin(state_buses)
+                ].index.intersection(available)
+
+                if len(state_assets) == 0:
+                    continue
+
+                df = (
+                    -n.links_t.p1[state_assets]
+                    .clip(upper=0)
+                    .groupby(n.links.loc[state_assets, "carrier"], axis=1)
+                    .sum()
+                    .rename(columns=rename_carrier)
+                    / 1e3
+                )
+
+                df["state"] = state
+                frames.append(df)
+
+    else:
+        if category == "Hydrogen":
+            specs = {
+                "Alkaline electrolyzer large": 33.0,
+                "Alkaline electrolyzer medium": 33.0,
+                "Alkaline electrolyzer small": 33.0,
+                "PEM electrolyzer": 33.0,
+                "SOEC": 33.0,
+            }
+        else:
+            specs = {
+                "grey Haber-Bosch": 5.17,
+                "e Haber-Bosch": 5.17,
+                "grey methanol synthesis": 5.54,
+                "e-methanol synthesis": 5.54,
+            }
+
+        links = n.links[n.links.carrier.isin(specs.keys())]
+
+        if not links.empty and "p1" in n.links_t:
+            for state in sorted(set(bus_state_map.values())):
+                state_buses = {bus for bus, s in bus_state_map.items() if s == state}
+                state_links = links.loc[links.bus1.isin(state_buses)]
+
+                state_frames = []
+
+                for carrier, conversion in specs.items():
+                    carrier_links = state_links[
+                        state_links.carrier == carrier
+                    ].index.intersection(n.links_t.p1.columns)
+
+                    if len(carrier_links) == 0:
+                        continue
+
+                    dispatch = (
+                        -n.links_t.p1[carrier_links].clip(upper=0).sum(axis=1)
+                        / conversion
+                        / 1e3
+                    )
+                    dispatch = dispatch.rename(rename_carrier(carrier))
+                    state_frames.append(dispatch)
+
+                if state_frames:
+                    df = pd.concat(state_frames, axis=1)
+                    df["state"] = state
+                    frames.append(df)
+
+    if not frames:
+        return pd.DataFrame()
+
+    out = pd.concat(frames)
+    out = out.groupby([out.index, "state"]).sum().reset_index()
+    out = out.rename(columns={out.columns[0]: "snapshot"})
+
+    return out
+
+
 def compute_dispatch_annual_totals(
     n: pypsa.Network,
     dispatch_df: pd.DataFrame,
