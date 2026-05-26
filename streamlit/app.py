@@ -478,7 +478,9 @@ with st.sidebar:
         if st.button("Download"):
             api_url = f"https://zenodo.org/api/records/{zenodo_record_id}"
             res = requests.get(api_url).json()
-            zenodo_file_name = f"elec_s_{zenodo_file_nodes}_ec_lv1_Co2L-3h_3h_2030_0.071_AB_0export.nc"
+            zenodo_file_name = (
+                f"elec_s_{zenodo_file_nodes}_ec_lv1_Co2L-3h_3h_2030_0.071_AB_0export.nc"
+            )
             file_info = next(
                 (f for f in res["files"] if f["key"] == zenodo_file_name), None
             )
@@ -1254,15 +1256,13 @@ if t_optimization.open:
 
             if not new_cost is None or not new_multiplier is None:
 
-                st.write (
-                    """
+                st.write("""
                     *Remark*: The duration of the optimization depends on several parameters such as number of network nodes, selected number of weeks or months to be considered as well as the chosen optimization solver.
                     Open-source solvers - such as HiGHS - are typically significant slower as commercial solvers. The Open Energy Transition Cluster (OETC) provides an option to run a commercial solver within the cloud and as such does not need to have own servers.
-                    HiGHS is used for optimization of weeks only while OETC is used for optimizing weeks, months, or a full year.
-                    
+                    HiGHS is used for optimization of one week only, while OETC is automatically selected when optimizing weeks, months, or a full year.
+
                     **The expected execution time might be up to some minutes**.
-                    """
-                )
+                    """)
 
                 if st.button("Run Optimization"):
                     n2 = n.copy()
@@ -1476,11 +1476,9 @@ if t_optimization.open:
                     st.write("Check the 'Results' tab for result details.")
 
             else:
-                st.write(
-                    """
+                st.write("""
                     To allow optimization, both, **economics** - tab '1. 💰 Economics' - **and** the **demand** - tab '2. 📊 Demands' - needs to be defined!
-                    """
-                )
+                    """)
 
                 # if new_cost is None:
                 #     st.write("Details on econmics are still missing.")
@@ -1515,25 +1513,25 @@ if t_results.open:
                             "Resolution": v_split[3].strip(),
                             "Cost Setup": v_split[4].strip(),
                             "H2 Demand": v_split[5]
-                                .replace("Mtpa", "")
-                                .replace("H2: ", "")
-                                .strip(),
+                            .replace("Mtpa", "")
+                            .replace("H2: ", "")
+                            .strip(),
                             "Grey Ammonia": v_split[6]
-                                .replace("Mtpa", "")
-                                .replace("Grey ammonia: ", "")
-                                .strip(),
+                            .replace("Mtpa", "")
+                            .replace("Grey ammonia: ", "")
+                            .strip(),
                             "e-Ammonia": v_split[7]
-                                .replace("Mtpa", "")
-                                .replace("e-ammonia: ", "")
-                                .strip(),
+                            .replace("Mtpa", "")
+                            .replace("e-ammonia: ", "")
+                            .strip(),
                             "Grey Methanol": v_split[8]
-                                .replace("Mtpa", "")
-                                .replace("Grey methanol: ", "")
-                                .strip(),
+                            .replace("Mtpa", "")
+                            .replace("Grey methanol: ", "")
+                            .strip(),
                             "e-Methanol": v_split[9]
-                                .replace("Mtpa", "")
-                                .replace("e-methanol: ", "")
-                                .strip(),
+                            .replace("Mtpa", "")
+                            .replace("e-methanol: ", "")
+                            .strip(),
                         }
                     )
 
@@ -2051,13 +2049,7 @@ if t_results.open:
 
                             if cost_df.empty:
                                 state_maps.append(
-                                    (
-                                        cost_label, 
-                                        None, 
-                                        empty_msg, 
-                                        None, 
-                                        None
-                                    )
+                                    (cost_label, None, empty_msg, None, None)
                                 )
                                 continue
 
