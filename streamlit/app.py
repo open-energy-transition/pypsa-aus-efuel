@@ -301,19 +301,29 @@ def to_fraction_discount_rate(discount_rate: float) -> float:
 
 def show_statistics(n: pypsa.Network):
     if st.session_state.n is not None:
-        st.header("Network Statistics (rows)")
-        st.write(f"Snapshots: {len(n.snapshots)}")
-        comps = {}
+        with st.expander(
+            "Network Statistics", expanded=False
+        ):
+            st.header("Network Statistics (rows)")
+            st.write(f"Snapshots: {len(n.snapshots)}")
+            comps = {}
+            exluded_comps = [
+                "networks", 
+                "sub_networks", 
+                "transformer_types", 
+                "line_types", 
+                "global_constraints",
+            ]
 
-        for c in n.components.keys() - ["Network", "SubNetwork"]:
-            if len(getattr(n, n.components[c]["list_name"])):
-                comps[c] = len(getattr(n, n.components[c]["list_name"]))
+            for c in n.components.keys() - exluded_comps:
+                if len(getattr(n, n.components[c]["list_name"])):
+                    comps[c] = len(getattr(n, n.components[c]["list_name"]))
 
-        df = pd.DataFrame.from_dict(comps, orient="index", columns=["Rows"])
-        # don't show details about Global Constraints and Component Types
-        df = df[~df.index.str.endswith("Constraint")]
-        df = df[~df.index.str.endswith("Type")]
-        st.bar_chart(df, height=275)
+            df = pd.DataFrame.from_dict(comps, orient="index", columns=["Rows"])
+            # don't show details about Global Constraints and Component Types
+            df = df[~df.index.str.endswith("Constraint")]
+            df = df[~df.index.str.endswith("Type")]
+            st.bar_chart(df, height=275)
     return
 
 
@@ -408,7 +418,6 @@ def build_scenario_summary(
 title = "AUS eFuels"
 st.set_page_config(page_title=f"{title} UI", layout="wide")
 st.title(f"{title} Interactive Manager")
-st.write("Walk through the tabs below from left to the right ...")
 with st.popover("Disclaimer", width="stretch", icon="⚠️"):
     st.write("""
         The content of this document/web page is intended for the exclusive use of **Open Energy Transition**'s client and other contractually agreed recipients. It may only be made available in whole or in part to third parties with the client’s consent and on a non-reliance basis. **Open Energy Transition** is not liable to third parties for the completeness and accuracy of the information provided therein.
@@ -467,10 +476,11 @@ with st.sidebar:
         st.session_state.network_loaded = True
         st.success("Network loaded successfully!")
 
-    with st.expander("Default PyPSA Network", expanded=True):
-        zenodo_record_id = st.text_input("Zenodo Record ID", "20352389", disabled=True)
+    with st.expander("Central PyPSA-Earth Network", expanded=True):
+        st.write("*Remark*: Central PyPSA-Earth files are downloaded from Zenodo.org")
+        zenodo_record_id = st.text_input("Record ID", "20352389", disabled=True)
         zenodo_file_nodes = st.radio(
-            "Number of Network Nodes:",
+            "Number of Network Nodes",
             [10, 15, 20],
             horizontal=True,
         )
@@ -507,7 +517,7 @@ with st.sidebar:
             else:
                 st.error("File not found in the given Zenodo record.")
 
-    with st.expander("Local PyPSA-AUS Network", expanded=False):
+    with st.expander("Local PyPSA-Earth Network", expanded=False):
         uploaded_file = st.file_uploader(
             "Choose a PyPSA NetCDF file",
             type=["nc"],
@@ -536,7 +546,6 @@ with st.sidebar:
     if st.session_state.network_loaded:
         show_statistics(st.session_state.n)
 
-    st.write("---")
     pkgs = {}
     for pkg in ["highspy", "linopy", "pypsa", "streamlit"]:
         pkg_version = version(pkg)
@@ -544,8 +553,11 @@ with st.sidebar:
         if pkg == "pypsa":
             st.session_state.PYPSA_VERSION = version(pkg)
 
-    df = pd.DataFrame.from_dict(pkgs, orient="index", columns=["Installed Versions"])
-    st.dataframe(df)
+    with st.expander(
+        "Installed Main Packages", expanded=False
+    ):
+        df = pd.DataFrame.from_dict(pkgs, orient="index", columns=["Versions"])
+        st.dataframe(df)
 
 # Tabs
 tabs = [
@@ -564,7 +576,7 @@ if t_welcome.open:
     with t_welcome:
         st.subheader("Welcome to the PyPSA-AUS-eFuels Interactive Manager!")
         st.write(f"""
-            Use the sidebar to load your network and set project targets. Then, navigate through the tabs to manage different aspects of your project (economic and demand parameters).
+            **Use the sidebar to load your network and set project targets. Then, navigate through the tabs to manage different aspects of your project (economic and demand parameters).**
 
             By default it is assumed that {DEFAULT_E_SHARE*100}% of the diesel demand can be reduced by electrification.
             Additionally it is assumed that {DEFAULT_E_SHARE_PRODUCTION*100}% of the remaining diesel and ammonia demand shall be covered by local green production.
@@ -844,9 +856,9 @@ if t_economic.open:
             n = st.session_state.n
             g = n.generators
 
-            with st.expander("Selected Economic Parameters", expanded=True):
+            with st.expander("Economic Parameters", expanded=True):
                 st.write(
-                    "Choose Capital Cost and Marginal Cost to be used for your case:"
+                    "Choose Discount Rate, Capital Cost, and Marginal Cost to be used."
                 )
 
                 old_lt = {}
@@ -1020,8 +1032,8 @@ if t_demand.open:
         else:
             st.header("Demand Parameters")
             n = st.session_state.n
-            with st.expander("Selected Demand Parameters", expanded=True):
-                st.write("Choose Load Multipliers to be used for your case:")
+            with st.expander("Demand Parameters", expanded=True):
+                st.write("Choose Demand (Hydrogen, Ammnonia, and Methanol) to be used.")
                 old_multiplier = {}
                 new_multiplier = {}
                 # collect the current demand
@@ -1210,7 +1222,7 @@ if t_optimization.open:
 
                 with col1:
                     run_mode = st.radio(
-                        "Select desired optimization snapshots:",
+                        "Desired optimization snapshots",
                         ["Full Year", "Full Month", "Week per Month"],
                         index=2,
                         horizontal=True,
@@ -1219,7 +1231,7 @@ if t_optimization.open:
                 if run_mode != "Full Year":
                     with col2:
                         months = st.multiselect(
-                            "Select months to consider:",
+                            "Month(s) to consider",
                             [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
                             default=[1],
                         )
@@ -1229,7 +1241,7 @@ if t_optimization.open:
                 with col3:
                     if run_mode == "Week per Month":
                         weeks = st.radio(
-                            "Select week within selected months:",
+                            "Week no within selected months",
                             [1, 2, 3, 4],
                             index=0,
                             horizontal=True,
@@ -1243,7 +1255,7 @@ if t_optimization.open:
                 solver_default_index = 0 if use_highs else 1
 
                 solver_name = st.radio(
-                    "Select the solver to use for optimization:",
+                    "Solver to use for optimization",
                     ["highs", "OETC"],
                     index=solver_default_index,
                     horizontal=True,
@@ -1261,10 +1273,10 @@ if t_optimization.open:
                     Open-source solvers - such as HiGHS - are typically significant slower as commercial solvers. The Open Energy Transition Cluster (OETC) provides an option to run a commercial solver within the cloud and as such does not need to have own servers.
                     HiGHS is used for optimization of one week only, while OETC is automatically selected when optimizing weeks, months, or a full year.
 
-                    **The expected execution time might be up to some minutes**.
+                    **The solver execution time is expected to be up to several minutes**.
                     """)
 
-                if st.button("Run Optimization"):
+                if st.button(f"Run Optimization (using {solver_name})"):
                     n2 = n.copy()
 
                     if run_mode in ["Full Month", "Week per Month"]:
