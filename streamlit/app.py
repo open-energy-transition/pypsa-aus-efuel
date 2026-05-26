@@ -468,16 +468,19 @@ with st.sidebar:
         st.success("Network loaded successfully!")
 
     with st.expander("Default PyPSA Network", expanded=True):
-        zenodo_record_id = st.text_input("Zenodo Record ID", "20049009", disabled=True)
-        zenodo_file_name = st.text_input(
-            "File Name",
-            "elec_s_10_ec_lv1_Co2L-3h_3h_2030_0.071_AB_0export.nc",
-            disabled=True,
+        zenodo_record_id = st.text_input("Zenodo Record ID", "20352389", disabled=True)
+        zenodo_file_nodes = st.radio(
+            "Number of Network Nodes:",
+            [10, 15, 20],
+            horizontal=True,
         )
 
         if st.button("Download"):
             api_url = f"https://zenodo.org/api/records/{zenodo_record_id}"
             res = requests.get(api_url).json()
+            zenodo_file_name = (
+                f"elec_s_{zenodo_file_nodes}_ec_lv1_Co2L-3h_3h_2030_0.071_AB_0export.nc"
+            )
             file_info = next(
                 (f for f in res["files"] if f["key"] == zenodo_file_name), None
             )
@@ -1235,9 +1238,9 @@ if t_optimization.open:
                         weeks = None
 
             with st.expander("Solver Options", expanded=False):
-                use_local_highs = run_mode == "Week per Month" and len(months) == 1
+                use_highs = run_mode == "Week per Month" and len(months) == 1
 
-                solver_default_index = 0 if use_local_highs else 1
+                solver_default_index = 0 if use_highs else 1
 
                 solver_name = st.radio(
                     "Select the solver to use for optimization:",
@@ -1246,221 +1249,241 @@ if t_optimization.open:
                     horizontal=True,
                 )
 
-                if use_local_highs:
+                if use_highs:
                     st.caption("Default: HiGHS for a single selected week.")
                 else:
                     st.caption("Default: OETC for larger optimization scopes.")
 
-            if st.button("Run LOPF"):
-                n2 = n.copy()
+            if not new_cost is None or not new_multiplier is None:
 
-                if run_mode in ["Full Month", "Week per Month"]:
-                    sns_before = len(n2.snapshots)
+                st.write("""
+                    *Remark*: The duration of the optimization depends on several parameters such as number of network nodes, selected number of weeks or months to be considered as well as the chosen optimization solver.
+                    Open-source solvers - such as HiGHS - are typically significant slower as commercial solvers. The Open Energy Transition Cluster (OETC) provides an option to run a commercial solver within the cloud and as such does not need to have own servers.
+                    HiGHS is used for optimization of one week only, while OETC is automatically selected when optimizing weeks, months, or a full year.
 
-                    if run_mode == "Full Month":
-                        sns_subset = n2.snapshots[
-                            n2.snapshots.strftime("%m").astype(int).isin(months)
+                    **The expected execution time might be up to some minutes**.
+                    """)
+
+                if st.button("Run Optimization"):
+                    n2 = n.copy()
+
+                    if run_mode in ["Full Month", "Week per Month"]:
+                        sns_before = len(n2.snapshots)
+
+                        if run_mode == "Full Month":
+                            sns_subset = n2.snapshots[
+                                n2.snapshots.strftime("%m").astype(int).isin(months)
+                            ]
+
+                        elif run_mode == "Week per Month":
+                            start_day = (weeks - 1) * 7 + 1
+                            end_day = start_day + 7
+
+                            sns_subset = get_snapshots(
+                                n2,
+                                start_day=start_day,
+                                end_day=end_day,
+                                months=months,
+                            )
+
+                        sns_after = len(sns_subset)
+
+                        if sns_after == 0:
+                            st.error(
+                                "No snapshots selected. Please choose at least one valid month/week."
+                            )
+                            st.stop()
+
+                        n2.set_snapshots(sns_subset)
+                        n2.snapshot_weightings = (
+                            n2.snapshot_weightings * sns_before / sns_after
+                        )
+
+                    st.info(f"Optimizing for {len(n2.snapshots)} snapshots ...")
+                    st.session_state.opt_runs += 1
+
+                    n2.consistency_check()
+                    if (
+                        st.session_state.PYPSA_VERSION is not None
+                        and st.session_state.PYPSA_VERSION > "1.0.0"
+                    ):
+                        n2.sanitize()
+
+                    remote = None
+
+                    if solver_name == "OETC":
+                        required_oetc_secrets = [
+                            "OETC_EMAIL",
+                            "OETC_PASSWORD",
+                            "OETC_AUTHENTICATION_SERVER_URL",
+                            "OETC_ORCHESTRATOR_SERVER_URL",
                         ]
 
-                    elif run_mode == "Week per Month":
-                        start_day = (weeks - 1) * 7 + 1
-                        end_day = start_day + 7
+                        missing_oetc_secrets = [
+                            secret
+                            for secret in required_oetc_secrets
+                            if not get_secret(secret)
+                        ]
 
-                        sns_subset = get_snapshots(
-                            n2,
-                            start_day=start_day,
-                            end_day=end_day,
-                            months=months,
-                        )
+                        if missing_oetc_secrets:
+                            st.error(
+                                "OETC is selected, but the following required secrets are missing: "
+                                + ", ".join(missing_oetc_secrets)
+                            )
+                            st.stop()
 
-                    sns_after = len(sns_subset)
+                        solver_options = {
+                            "threads": 4,
+                            "method": 2,
+                            "crossover": 0,
+                            "BarConvTol": 1.0e-6,
+                            "Seed": 123,
+                            "AggFill": 0,
+                            "PreDual": 0,
+                            "GURO_PAR_BARDENSETHRESH": 200,
+                        }
 
-                    if sns_after == 0:
-                        st.error(
-                            "No snapshots selected. Please choose at least one valid month/week."
-                        )
-                        st.stop()
+                        try:
+                            remote = OetcHandler(
+                                OetcSettings(
+                                    name="pypsa-aus-efuel",
+                                    authentication_server_url=get_secret(
+                                        "OETC_AUTHENTICATION_SERVER_URL"
+                                    ),
+                                    orchestrator_server_url=get_secret(
+                                        "OETC_ORCHESTRATOR_SERVER_URL"
+                                    ),
+                                    compute_provider=ComputeProvider.GCP,
+                                    cpu_cores=4,
+                                    disk_space_gb=20,
+                                    credentials=OetcCredentials(
+                                        email=get_secret("OETC_EMAIL"),
+                                        password=get_secret("OETC_PASSWORD"),
+                                    ),
+                                    solver="gurobi",
+                                    solver_options=solver_options,
+                                )
+                            )
 
-                    n2.set_snapshots(sns_subset)
-                    n2.snapshot_weightings = (
-                        n2.snapshot_weightings * sns_before / sns_after
+                            solver_name = "gurobi"
+
+                        except Exception as exc:
+                            st.error(f"Failed to initialize OETC remote backend: {exc}")
+                            st.stop()
+
+                    else:
+                        solver_options = {
+                            "solver": "hipo",
+                            "user_objective_scale": -2,
+                            "user_bound_scale": -14,
+                        }
+
+                    started_at = pd.Timestamp.now(tz="Europe/Rome").strftime(
+                        "%Y-%m-%d %H:%M:%S"
                     )
+                    start_time = time.perf_counter()
 
-                st.info(f"Optimizing for {len(n2.snapshots)} snapshots ...")
-                st.session_state.opt_runs += 1
-
-                n2.consistency_check()
-                if (
-                    st.session_state.PYPSA_VERSION is not None
-                    and st.session_state.PYPSA_VERSION > "1.0.0"
-                ):
-                    n2.sanitize()
-
-                remote = None
-
-                if solver_name == "OETC":
-                    required_oetc_secrets = [
-                        "OETC_EMAIL",
-                        "OETC_PASSWORD",
-                        "OETC_AUTHENTICATION_SERVER_URL",
-                        "OETC_ORCHESTRATOR_SERVER_URL",
-                    ]
-
-                    missing_oetc_secrets = [
-                        secret
-                        for secret in required_oetc_secrets
-                        if not get_secret(secret)
-                    ]
-
-                    if missing_oetc_secrets:
-                        st.error(
-                            "OETC is selected, but the following required secrets are missing: "
-                            + ", ".join(missing_oetc_secrets)
-                        )
-                        st.stop()
-
-                    solver_options = {
-                        "threads": 4,
-                        "method": 2,
-                        "crossover": 0,
-                        "BarConvTol": 1.0e-6,
-                        "Seed": 123,
-                        "AggFill": 0,
-                        "PreDual": 0,
-                        "GURO_PAR_BARDENSETHRESH": 200,
-                    }
+                    st.info(f"Optimization started at {started_at}.")
 
                     try:
-                        remote = OetcHandler(
-                            OetcSettings(
-                                name="pypsa-aus-efuel",
-                                authentication_server_url=get_secret(
-                                    "OETC_AUTHENTICATION_SERVER_URL"
-                                ),
-                                orchestrator_server_url=get_secret(
-                                    "OETC_ORCHESTRATOR_SERVER_URL"
-                                ),
-                                compute_provider=ComputeProvider.GCP,
-                                cpu_cores=4,
-                                disk_space_gb=20,
-                                credentials=OetcCredentials(
-                                    email=get_secret("OETC_EMAIL"),
-                                    password=get_secret("OETC_PASSWORD"),
-                                ),
-                                solver="gurobi",
+                        with st.spinner("Solving network..."):
+                            status, condition = n2.optimize(
+                                solver_name=solver_name,
+                                assign_all_duals=False,
                                 solver_options=solver_options,
+                                remote=remote,
                             )
-                        )
-
-                        solver_name = "gurobi"
 
                     except Exception as exc:
-                        st.error(f"Failed to initialize OETC remote backend: {exc}")
+                        elapsed_s = time.perf_counter() - start_time
+                        st.error(
+                            f"Optimization failed after {elapsed_s / 60:.1f} minutes: {exc}"
+                        )
                         st.stop()
 
-                else:
-                    solver_options = {
-                        "solver": "hipo",
-                        "user_objective_scale": -2,
-                        "user_bound_scale": -14,
-                    }
-
-                started_at = pd.Timestamp.now(tz="Europe/Rome").strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                )
-                start_time = time.perf_counter()
-
-                st.info(f"Optimization started at {started_at}.")
-
-                try:
-                    with st.spinner("Solving network..."):
-                        status, condition = n2.optimize(
-                            solver_name=solver_name,
-                            assign_all_duals=False,
-                            solver_options=solver_options,
-                            remote=remote,
-                        )
-
-                except Exception as exc:
                     elapsed_s = time.perf_counter() - start_time
-                    st.error(
-                        f"Optimization failed after {elapsed_s / 60:.1f} minutes: {exc}"
-                    )
-                    st.stop()
 
-                elapsed_s = time.perf_counter() - start_time
-
-                if status == "ok":
-                    st.success(
-                        f"Optimization finished: {condition}. "
-                        f"Elapsed time: {elapsed_s / 60:.1f} minutes."
-                    )
-                else:
-                    st.warning(
-                        f"Optimization finished with status={status}, condition={condition}. "
-                        f"Elapsed time: {elapsed_s / 60:.1f} minutes."
-                    )
-
-                # calculate the annual costs for importing e-fuels otherwise
-                if new_cost is None or new_multiplier is None:
-                    st.warning(
-                        "Demand parameters were not applied. Import-cost comparison is skipped."
-                    )
-                    avoided_import_cost = None
-                else:
-                    avoided_import_cost = 0.0
-
-                    for l in load_data:
-                        loads = get_loads_for_demand_entry(
-                            n2,
-                            carriers=load_data[l]["carriers"],
-                            loads=load_data[l]["loads"],
+                    if status == "ok" and condition != "unknown":
+                        st.success(
+                            f"Optimization finished: {condition}. "
+                            f"Elapsed time: {elapsed_s / 60:.1f} minutes."
+                        )
+                    else:
+                        st.warning(
+                            f"Optimization finished with status={status}, condition={condition}. "
+                            f"Elapsed time: {elapsed_s / 60:.1f} minutes."
                         )
 
-                        if len(loads) == 0:
-                            continue
+                    # calculate the annual costs for importing e-fuels otherwise
+                    if new_cost is None or new_multiplier is None:
+                        st.warning(
+                            "Demand parameters were not applied. Import-cost comparison is skipped."
+                        )
+                        avoided_import_cost = None
+                    else:
+                        avoided_import_cost = 0.0
 
-                        avoided_import_cost += new_multiplier[l] * new_cost[l] * 1e6
+                        for l in load_data:
+                            loads = get_loads_for_demand_entry(
+                                n2,
+                                carriers=load_data[l]["carriers"],
+                                loads=load_data[l]["loads"],
+                            )
 
-                optimized_system_cost = n2.objective
-                expanded_cap = n2.statistics.expanded_capacity().round(1)
+                            if len(loads) == 0:
+                                continue
 
-                expanded_cap[("Economics", "Annuity")] = round(
-                    optimized_system_cost / 1e6, 1
-                )  # million AUD
+                            avoided_import_cost += new_multiplier[l] * new_cost[l] * 1e6
 
-                if avoided_import_cost is not None:
-                    expanded_cap[("Economics", "Savings")] = round(
-                        (avoided_import_cost - optimized_system_cost) / 1e6, 1
+                    optimized_system_cost = n2.objective
+                    expanded_cap = n2.statistics.expanded_capacity().round(1)
+
+                    expanded_cap[("Economics", "Annuity")] = round(
+                        optimized_system_cost / 1e6, 1
                     )  # million AUD
 
-                run_name = scenario_id
+                    if avoided_import_cost is not None:
+                        expanded_cap[("Economics", "Savings")] = round(
+                            (avoided_import_cost - optimized_system_cost) / 1e6, 1
+                        )  # million AUD
 
-                if (
-                    st.session_state.results is not None
-                    and run_name in st.session_state.results.columns
-                ):
-                    run_name = f"{scenario_id}_r{st.session_state.opt_runs}"
+                    run_name = scenario_id
 
-                scenario_label = str(len(st.session_state.scenario_labels) + 1)
+                    if (
+                        st.session_state.results is not None
+                        and run_name in st.session_state.results.columns
+                    ):
+                        run_name = f"{scenario_id}_r{st.session_state.opt_runs}"
 
-                st.session_state.solved_networks[run_name] = n2
-                st.session_state.scenario_metadata[run_name] = scenario_summary
-                st.session_state.scenario_labels[run_name] = scenario_label
+                    scenario_label = str(len(st.session_state.scenario_labels) + 1)
 
-                st.info(f"Saved as scenario {scenario_label}.")
+                    st.session_state.solved_networks[run_name] = n2
+                    st.session_state.scenario_metadata[run_name] = scenario_summary
+                    st.session_state.scenario_labels[run_name] = scenario_label
 
-                if st.session_state.results is None:
-                    cap_df = expanded_cap.to_frame(name=run_name)
-                else:
-                    cap_df = st.session_state.results.join(
-                        expanded_cap.to_frame(name=run_name)
-                    )
+                    st.info(f"Saved as scenario {scenario_label}.")
 
-                # save the cap_df to be used in the 'Results' tab
-                st.session_state.results = cap_df
+                    if st.session_state.results is None:
+                        cap_df = expanded_cap.to_frame(name=run_name)
+                    else:
+                        cap_df = st.session_state.results.join(
+                            expanded_cap.to_frame(name=run_name)
+                        )
 
-                st.write("Check the 'Results' tab for details.")
+                    # save the cap_df to be used in the 'Results' tab
+                    st.session_state.results = cap_df
+
+                    st.write("Check the 'Results' tab for result details.")
+
+            else:
+                st.write("""
+                    To allow optimization, both, **economics** - tab '1. 💰 Economics' - **and** the **demand** - tab '2. 📊 Demands' - needs to be defined!
+                    """)
+
+                # if new_cost is None:
+                #     st.write("Details on econmics are still missing.")
+                # if new_multiplier is None:
+                #     st.write("Details on demand are still missing")
 
 # TAB RESULTS
 if t_results.open:
@@ -1469,7 +1492,7 @@ if t_results.open:
             st.header("Results Explorer")
 
             if "scenario_metadata" in st.session_state:
-                st.subheader("Scenario Overview")
+                st.subheader("Scenario Overviews")
 
                 st.caption(
                     "Hydrogen and hydrogen-based derivative demands are reported in Mtpa."
@@ -1941,10 +1964,10 @@ if t_results.open:
                     cost_map = st.radio(
                         "Select cost map",
                         [
-                            "Electricity (LCOE)",
-                            "H2 from electrolysis (LCOH)",
-                            "e-Ammonia levelized cost",
-                            "e-Methanol levelized cost",
+                            "electricity (LCOE)",
+                            "e-hydrogen (LCOH)",
+                            "e-ammonia (LCOA)",
+                            "e-methanol (LCOM)",
                         ],
                         horizontal=True,
                     )
@@ -1964,7 +1987,7 @@ if t_results.open:
                             cost_label = label_map.get(cost_run, cost_run)
                             n_cost = st.session_state.solved_networks[cost_run]
 
-                            if cost_map == "Electricity (LCOE)":
+                            if cost_map == "electricity (LCOE)":
                                 cost_df, _ = compute_lcoe_by_bus(n_cost)
                                 cost_col = "weighted_lcoe"
                                 weight_col = "dispatch_twh"
@@ -1980,7 +2003,7 @@ if t_results.open:
                                     weight_col: "Dispatch (TWh)",
                                 }
 
-                            elif cost_map == "H2 from electrolysis (LCOH)":
+                            elif cost_map == "e-hydrogen (LCOH)":
                                 cost_df, _ = compute_lcoh_by_bus(n_cost)
                                 cost_col = "weighted_lcoh_aud_per_kg"
                                 weight_col = "h2_dispatch_kt"
@@ -1994,7 +2017,7 @@ if t_results.open:
                                     weight_col: "Grid H2 production (kt H2)",
                                 }
 
-                            elif cost_map == "e-Ammonia levelized cost":
+                            elif cost_map == "e-ammonia (LCOA)":
                                 cost_df, _ = compute_lco_ammonia_by_bus(n_cost)
                                 cost_col = "weighted_lco_ammonia_aud_per_tonne"
                                 weight_col = "production_kt"
@@ -2010,7 +2033,7 @@ if t_results.open:
                                     weight_col: "e-ammonia production (kt NH3)",
                                 }
 
-                            elif cost_map == "e-Methanol levelized cost":
+                            elif cost_map == "e-methanol (LCOM)":
                                 cost_df, _ = compute_lco_methanol_by_bus(n_cost)
                                 cost_col = "weighted_lco_methanol_aud_per_tonne"
                                 weight_col = "production_kt"
