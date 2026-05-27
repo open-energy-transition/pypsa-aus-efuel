@@ -301,17 +301,15 @@ def to_fraction_discount_rate(discount_rate: float) -> float:
 
 def show_statistics(n: pypsa.Network):
     if st.session_state.n is not None:
-        with st.expander(
-            "Network Statistics", expanded=False
-        ):
+        with st.expander("Network Statistics", expanded=False):
             st.header("Network Statistics (rows)")
             st.write(f"Snapshots: {len(n.snapshots)}")
             comps = {}
             exluded_comps = [
-                "networks", 
-                "sub_networks", 
-                "transformer_types", 
-                "line_types", 
+                "networks",
+                "sub_networks",
+                "transformer_types",
+                "line_types",
                 "global_constraints",
             ]
 
@@ -553,9 +551,7 @@ with st.sidebar:
         if pkg == "pypsa":
             st.session_state.PYPSA_VERSION = version(pkg)
 
-    with st.expander(
-        "Installed Main Packages", expanded=False
-    ):
+    with st.expander("Installed Main Packages", expanded=False):
         df = pd.DataFrame.from_dict(pkgs, orient="index", columns=["Versions"])
         st.dataframe(df)
 
@@ -1224,7 +1220,7 @@ if t_optimization.open:
                     run_mode = st.radio(
                         "Desired optimization snapshots",
                         ["Full Year", "Full Month", "Week per Month"],
-                        index=2,
+                        index=0,
                         horizontal=True,
                     )
 
