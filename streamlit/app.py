@@ -330,28 +330,29 @@ def compact_number_tag(value: float, decimals: int = 1) -> str:
     return f"{value:.{decimals}f}".replace(".", "p")
 
 
+def get_effective_demand_parameters() -> dict[str, float]:
+    """Return demand parameters currently selected in the UI."""
+    demand_values = st.session_state.get("new_multiplier", {}) or {}
+
+    demand_values = demand_values.copy()
+
+    for l in load_data:
+        widget_key = f"draft_demand_{l}"
+        if widget_key in st.session_state:
+            demand_values[l] = float(st.session_state[widget_key])
+
+    if st.session_state.get("new_demand_meoh") is not None:
+        demand_values["e_methanol"] = float(st.session_state.new_demand_meoh)
+
+    if st.session_state.get("new_demand_nh3") is not None:
+        demand_values["e_ammonia"] = float(st.session_state.new_demand_nh3)
+
+    return demand_values
+
+
 def get_current_demand_values() -> dict[str, float]:
-    """Return current demand values from the Streamlit session state in Mtpa."""
-    old_multiplier = st.session_state.get("old_multiplier")
-    new_multiplier = st.session_state.get("new_multiplier")
-
-    source = new_multiplier if new_multiplier is not None else old_multiplier
-
-    values = {
-        "custom_h2": 0.0,
-        "grey_ammonia": 0.0,
-        "e_ammonia": 0.0,
-        "grey_methanol": 0.0,
-        "e_methanol": 0.0,
-    }
-
-    if source is None:
-        return values
-
-    for key in values:
-        values[key] = float(source.get(key, 0.0))
-
-    return values
+    """Return current effective demand values from the Streamlit session state in Mtpa."""
+    return get_effective_demand_parameters()
 
 
 def build_scenario_id(
@@ -456,18 +457,156 @@ if "new_demand_nh3" not in st.session_state:
 with st.sidebar:
     st.sidebar.header("Networks")
 
-    def normalize_generator_discount_rates(n: pypsa.Network) -> None:
-        """Ensure generator discount rates exist and are stored as fractions."""
-        g = n.generators
-
-        if "discount_rate" not in g.columns:
-            g["discount_rate"] = st.session_state.dr / 100
+    def normalize_component_discount_rates(component: pd.DataFrame) -> None:
+        """Ensure discount rates exist and are stored as fractions."""
+        if "discount_rate" not in component.columns:
+            component["discount_rate"] = st.session_state.dr / 100
         else:
-            g["discount_rate"] = g["discount_rate"].apply(to_fraction_discount_rate)
+            component["discount_rate"] = component["discount_rate"].apply(
+                to_fraction_discount_rate
+            )
+
+    def initialize_default_welcome_demands() -> tuple[float, float]:
+        """Calculate default e-methanol and e-ammonia demands from Welcome assumptions."""
+        diesel_total_remaining = 0.0
+
+        for s in sectors:
+            diesel_total_remaining += sectors[s]["demand"] * (1 - sectors[s]["e-share"])
+
+        default_domestic_diesel_supply = 4.5
+        default_meoh = DEFAULT_E_SHARE_PRODUCTION * (
+            diesel_total_remaining - default_domestic_diesel_supply
+        )
+
+        ammonia_total_remaining = 0.0
+
+        for s in fertilizeres:
+            ammonia_total_remaining += (
+                fertilizeres[s]["demand"]
+                * fertilizeres[s]["ammonia_equiv"]
+                * (1 - fertilizeres[s]["e-share"])
+            )
+
+        default_domestic_ammonia_supply = 0.4
+        default_nh3 = DEFAULT_E_SHARE_PRODUCTION * (
+            ammonia_total_remaining - default_domestic_ammonia_supply
+        )
+
+        return default_meoh, default_nh3
+
+    def collect_default_demand_parameters(n: pypsa.Network) -> dict[str, float]:
+        """Collect default demand values from the loaded network in Mtpa."""
+        default_multiplier = {}
+
+        for l in load_data:
+            loads = get_loads_for_demand_entry(
+                n,
+                carriers=load_data[l]["carriers"],
+                loads=load_data[l]["loads"],
+            )
+
+            if len(loads) == 0:
+                default_multiplier[l] = 0.0
+
+            elif l in MWH_PER_TONNE:
+                available_loads = loads.intersection(n.loads_t.p.columns)
+
+                if len(available_loads) > 0:
+                    annual_mwh = (
+                        n.loads_t.p[available_loads]
+                        .multiply(n.snapshot_weightings.generators, axis=0)
+                        .sum()
+                        .sum()
+                    )
+                else:
+                    annual_mwh = (
+                        n.loads.loc[loads, "p_set"].sum()
+                        * n.snapshot_weightings.generators.sum()
+                    )
+
+                default_multiplier[l] = annual_mwh / MWH_PER_TONNE[l] / 1e6
+
+            else:
+                default_multiplier[l] = 0.0
+
+        return default_multiplier
+
+    def apply_demand_parameters_to_network(
+        n: pypsa.Network,
+        demand_values: dict[str, float],
+    ) -> list[str]:
+        """Apply demand values to the network loads."""
+        name_loads = []
+
+        for l in load_data:
+            loads = get_loads_for_demand_entry(
+                n,
+                carriers=load_data[l]["carriers"],
+                loads=load_data[l]["loads"],
+            )
+
+            nr_loads = len(loads)
+
+            if nr_loads == 0 or l not in MWH_PER_TONNE:
+                continue
+
+            annual_mwh = demand_values[l] * 1e6 * MWH_PER_TONNE[l]
+            new_p_set = annual_mwh / n.snapshot_weightings.generators.sum() / nr_loads
+
+            for load in loads:
+                n.loads.loc[load, "p_set"] = new_p_set
+                n.loads_t.p[load] = new_p_set
+                name_loads.append(load)
+
+        return name_loads
+
+    def apply_default_economic_parameters(n: pypsa.Network) -> None:
+        """Apply default economic parameters to the loaded network."""
+        normalize_component_discount_rates(n.generators)
+        normalize_component_discount_rates(n.links)
+
+        for d in tech_data:
+            if d == "electrolysis":
+                component = n.links
+                mask = component.carrier.isin(ELECTROLYZER_LINK_CARRIERS)
+            else:
+                component = n.generators
+                mask = component.carrier.str.startswith(d, na=False)
+
+            if not mask.any():
+                continue
+
+            component.loc[mask, "discount_rate"] = tech_data[d]["dr"] / 100
+            component.loc[mask, "capital_cost"] = (
+                tech_data[d]["cc"]
+                * annuity_factor(tech_data[d]["dr"] / 100, tech_data[d]["lt"])
+                * (1 + default_om / 100)
+            )
+            component.loc[mask, "marginal_cost"] = tech_data[d]["mc"]
+            component.loc[mask, "overnight_cost"] = tech_data[d]["cc"]
+            component.loc[mask, "fom_cost"] = tech_data[d]["cc"] * default_om / 100
 
     def register_loaded_network(n: pypsa.Network) -> None:
         """Store a loaded network in Streamlit session state."""
-        normalize_generator_discount_rates(n)
+        apply_default_economic_parameters(n)
+
+        default_meoh, default_nh3 = initialize_default_welcome_demands()
+
+        default_multiplier = collect_default_demand_parameters(n)
+        default_multiplier["e_methanol"] = default_meoh
+        default_multiplier["e_ammonia"] = default_nh3
+
+        default_cost = {}
+        for l in load_data:
+            default_cost[l] = load_data[l]["cost"]
+
+        apply_demand_parameters_to_network(n, default_multiplier)
+
+        st.session_state.new_demand_meoh = default_meoh
+        st.session_state.new_demand_nh3 = default_nh3
+        st.session_state.old_multiplier = default_multiplier.copy()
+        st.session_state.new_multiplier = default_multiplier.copy()
+        st.session_state.new_cost = default_cost.copy()
 
         st.session_state.n = n
         st.session_state.costs_modified = False
@@ -1136,30 +1275,10 @@ with t_demand:
             st.session_state.new_cost = new_cost
 
         if st.button("Apply New Demand"):
-            name_loads = []
-            for l in load_data:
-                loads = get_loads_for_demand_entry(
-                    n,
-                    carriers=load_data[l]["carriers"],
-                    loads=load_data[l]["loads"],
-                )
-                nr_loads = len(loads)
+            name_loads = apply_demand_parameters_to_network(n, new_multiplier)
 
-                if nr_loads == 0:
-                    continue
-
-                if l not in MWH_PER_TONNE:
-                    continue
-
-                annual_mwh = new_multiplier[l] * 1e6 * MWH_PER_TONNE[l]
-                new_p_set = (
-                    annual_mwh / n.snapshot_weightings.generators.sum() / nr_loads
-                )
-
-                for load in loads:
-                    n.loads.loc[load, "p_set"] = new_p_set
-                    n.loads_t.p[load] = new_p_set
-                    name_loads.append(load)
+            st.session_state.old_multiplier = new_multiplier.copy()
+            st.session_state.new_multiplier = new_multiplier.copy()
 
             st.success("Updated details for mentioned carriers ...")
             df = n.loads[["carrier", "p_set"]]
@@ -1172,7 +1291,8 @@ with t_optimization:
         st.write("After loading a network, you are able to optimize the network.")
     else:
         n = st.session_state.n
-        new_multiplier = st.session_state.new_multiplier
+        new_multiplier = get_effective_demand_parameters()
+        st.session_state.new_multiplier = new_multiplier.copy()
         new_cost = st.session_state.new_cost
 
         st.header("Run Optimization")
@@ -1274,6 +1394,24 @@ with t_optimization:
                 """)
 
             if st.button(f"Run Optimization (using {solver_name})"):
+                apply_default_economic_parameters(st.session_state.n)
+
+                name_loads = apply_demand_parameters_to_network(
+                    st.session_state.n,
+                    new_multiplier,
+                )
+
+                st.session_state.old_multiplier = new_multiplier.copy()
+                st.session_state.new_multiplier = new_multiplier.copy()
+
+                if not name_loads:
+                    st.error(
+                        "No demand loads were updated before optimization. "
+                        "Check load names/carriers in load_data."
+                    )
+                    st.stop()
+
+                n = st.session_state.n
                 n2 = n.copy()
 
                 if run_mode in ["Full Month", "Week per Month"]:
@@ -1418,10 +1556,12 @@ with t_optimization:
                         f"Elapsed time: {elapsed_s / 60:.1f} minutes."
                     )
                 else:
-                    st.warning(
-                        f"Optimization finished with status={status}, condition={condition}. "
+                    st.error(
+                        f"Optimization did not solve correctly: "
+                        f"status={status}, condition={condition}. "
                         f"Elapsed time: {elapsed_s / 60:.1f} minutes."
                     )
+                    st.stop()
 
                 # calculate the annual costs for importing e-fuels otherwise
                 avoided_import_cost = 0.0
