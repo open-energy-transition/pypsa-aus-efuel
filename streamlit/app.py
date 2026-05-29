@@ -29,7 +29,10 @@ from linopy.remote.oetc import (
 from results_helpers import *
 
 import streamlit as st
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
+is_productive = True
 
 def get_secret(name: str) -> str:
     """Return a secret from Streamlit secrets or environment variables."""
@@ -146,11 +149,26 @@ DEFAULT_E_SHARE_PRODUCTION = 0.30
 # source: Department of Climate Change, Energy, the Environment and Water, Australian Energy Statistics, Table F, August 2025
 # last available data for 2023-24
 sectors: dict[str, float] = {
-    "Mining": {"demand": 299.0 / T_PER_GJ_DIESEL, "e-share": DEFAULT_E_SHARE},
-    "Transport": {"demand": 765.2 / T_PER_GJ_DIESEL, "e-share": DEFAULT_E_SHARE},
-    "Agriculture": {"demand": 88.8 / T_PER_GJ_DIESEL, "e-share": DEFAULT_E_SHARE},
-    "Manufacturing": {"demand": 13.9 / T_PER_GJ_DIESEL, "e-share": DEFAULT_E_SHARE},
-    "Construction": {"demand": 26.5 / T_PER_GJ_DIESEL, "e-share": DEFAULT_E_SHARE},
+    "Mining": {
+        "demand": 299.0 / T_PER_GJ_DIESEL,
+        "e-share": DEFAULT_E_SHARE
+    },
+    "Transport": {
+        "demand": 765.2 / T_PER_GJ_DIESEL, 
+        "e-share": DEFAULT_E_SHARE
+    },
+    "Agriculture": {
+        "demand": 88.8 / T_PER_GJ_DIESEL, 
+        "e-share": DEFAULT_E_SHARE
+    },
+    "Manufacturing": {
+        "demand": 13.9 / T_PER_GJ_DIESEL, 
+        "e-share": DEFAULT_E_SHARE
+    },
+    "Construction": {
+        "demand": 26.5 / T_PER_GJ_DIESEL,
+        "e-share": DEFAULT_E_SHARE
+    },
     "Commercial Services": {
         "demand": 32.1 / T_PER_GJ_DIESEL,
         "e-share": DEFAULT_E_SHARE,
@@ -217,6 +235,7 @@ load_data: dict[str, dict[str, int | float | str | list[str]]] = {
         "cost": 2000,
         "carriers": [],
         "loads": ["custom H2 demand"],
+        "co2_emissions": 9.5, # t_CO2 / t_H2
     },
     "grey_ammonia": {
         "multiplier": 1,
@@ -224,6 +243,7 @@ load_data: dict[str, dict[str, int | float | str | list[str]]] = {
         "cost": 700,
         "carriers": ["grey-ammonia"],
         "loads": [],
+        "co2_emissions": 2.2, # t_CO2 / t_NH3
     },
     "e_ammonia": {
         "multiplier": 1,
@@ -231,6 +251,7 @@ load_data: dict[str, dict[str, int | float | str | list[str]]] = {
         "cost": 700,
         "carriers": ["e-ammonia"],
         "loads": [],
+        "co2_emissions": 0.0, # t_CO2 / t_NH3
     },
     "grey_methanol": {
         "multiplier": 1,
@@ -238,6 +259,7 @@ load_data: dict[str, dict[str, int | float | str | list[str]]] = {
         "cost": 700,
         "carriers": ["grey-methanol"],
         "loads": [],
+        "co2_emissions": 1.1, # t_CO2 / t_MeOH
     },
     "e_methanol": {
         "multiplier": 1,
@@ -245,6 +267,7 @@ load_data: dict[str, dict[str, int | float | str | list[str]]] = {
         "cost": 1000,
         "carriers": ["e-methanol"],
         "loads": [],
+        "co2_emissions": 0.0, # t_CO2 / t_MeOH
     },
 }
 
@@ -654,45 +677,47 @@ with st.sidebar:
             else:
                 st.error("File not found in the given Zenodo record.")
 
-    with st.expander("Local PyPSA-Earth Network", expanded=False):
-        uploaded_file = st.file_uploader(
-            "Choose a PyPSA NetCDF file",
-            type=["nc"],
-            max_upload_size=5,
-        )
+    if not is_productive:
+        with st.expander("Local PyPSA-Earth Network", expanded=False):
+            uploaded_file = st.file_uploader(
+                "Choose a PyPSA NetCDF file",
+                type=["nc"],
+                max_upload_size=5,
+            )
 
-        if "uploaded_network_name" not in st.session_state:
-            st.session_state.uploaded_network_name = None
+            if "uploaded_network_name" not in st.session_state:
+                st.session_state.uploaded_network_name = None
 
-        if uploaded_file is not None:
-            if uploaded_file.name != st.session_state.uploaded_network_name:
-                with tempfile.NamedTemporaryFile(
-                    delete=False, suffix=".nc"
-                ) as tmp_file:
-                    tmp_file.write(uploaded_file.getvalue())
-                    tmp_path = tmp_file.name
+            if uploaded_file is not None:
+                if uploaded_file.name != st.session_state.uploaded_network_name:
+                    with tempfile.NamedTemporaryFile(
+                        delete=False, suffix=".nc"
+                    ) as tmp_file:
+                        tmp_file.write(uploaded_file.getvalue())
+                        tmp_path = tmp_file.name
 
-                with st.spinner("Loading network..."):
-                    n = pypsa.Network(tmp_path)
-                    register_loaded_network(n)
-                    st.session_state.uploaded_network_name = uploaded_file.name
+                    with st.spinner("Loading network..."):
+                        n = pypsa.Network(tmp_path)
+                        register_loaded_network(n)
+                        st.session_state.uploaded_network_name = uploaded_file.name
 
-                if os.path.exists(tmp_path):
-                    os.remove(tmp_path)
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
 
     if st.session_state.network_loaded:
         show_statistics(st.session_state.n)
 
-    pkgs = {}
-    for pkg in ["highspy", "linopy", "pypsa", "streamlit"]:
-        pkg_version = version(pkg)
-        pkgs[pkg] = pkg_version
-        if pkg == "pypsa":
-            st.session_state.PYPSA_VERSION = version(pkg)
+    if not is_productive:
+        pkgs = {}
+        for pkg in ["highspy", "linopy", "pypsa", "streamlit"]:
+            pkg_version = version(pkg)
+            pkgs[pkg] = pkg_version
+            if pkg == "pypsa":
+                st.session_state.PYPSA_VERSION = version(pkg)
 
-    with st.expander("Installed Main Packages", expanded=False):
-        df = pd.DataFrame.from_dict(pkgs, orient="index", columns=["Versions"])
-        st.dataframe(df)
+        with st.expander("Installed Main Packages", expanded=False):
+            df = pd.DataFrame.from_dict(pkgs, orient="index", columns=["Versions"])
+            st.dataframe(df)
 
 # Tabs
 tabs = [
@@ -1340,7 +1365,7 @@ with t_optimization:
             with col1:
                 run_mode = st.radio(
                     "Desired optimization snapshots",
-                    ["Full Year", "Full Month", "Week per Month"],
+                    ["Full Year", "Full Month", "Week(s) per Month(s)"],
                     index=0,
                     horizontal=True,
                 )
@@ -1356,7 +1381,7 @@ with t_optimization:
                 months = list(range(1, 13))
 
             with col3:
-                if run_mode == "Week per Month":
+                if run_mode == "Week(s) per Month(s)":
                     weeks = st.radio(
                         "Week no within selected months",
                         [1, 2, 3, 4],
@@ -1367,7 +1392,7 @@ with t_optimization:
                     weeks = None
 
         with st.expander("Solver Options", expanded=False):
-            use_highs = run_mode == "Week per Month" and len(months) == 1
+            use_highs = run_mode == "Week(s) per Month(s)" and len(months) == 1
 
             solver_default_index = 0 if use_highs else 1
 
@@ -1414,7 +1439,7 @@ with t_optimization:
                 n = st.session_state.n
                 n2 = n.copy()
 
-                if run_mode in ["Full Month", "Week per Month"]:
+                if run_mode in ["Full Month", "Week(s) per Month(s)"]:
                     sns_before = len(n2.snapshots)
 
                     if run_mode == "Full Month":
@@ -1422,7 +1447,7 @@ with t_optimization:
                             n2.snapshots.strftime("%m").astype(int).isin(months)
                         ]
 
-                    elif run_mode == "Week per Month":
+                    elif run_mode == "Week(s) per Month(s)":
                         start_day = (weeks - 1) * 7 + 1
                         end_day = start_day + 7
 
@@ -1534,7 +1559,9 @@ with t_optimization:
 
                 try:
                     with st.spinner("Solving network..."):
+                        n2.sanitize()
                         status, condition = n2.optimize(
+                            include_objective_constant=True,
                             solver_name=solver_name,
                             assign_all_duals=False,
                             solver_options=solver_options,
@@ -1589,6 +1616,16 @@ with t_optimization:
                     (avoided_import_cost - optimized_system_cost) / 1e6, 1
                 )
 
+                # calculate estimated co2 savings by producing green/e-products locally
+                co2_reduction = ((st.session_state.new_demand_meoh * load_data["grey_methanol"]["co2_emissions"]) + 
+                                 (st.session_state.new_demand_nh3 * load_data["grey_ammonia"]["co2_emissions"])) * 10e6
+                if expanded_cap[("Economics", "Savings")] < 0:
+                    eq_co2_price = abs((avoided_import_cost - optimized_system_cost) / co2_reduction)
+                else:
+                    eq_co2_price = 0.0
+
+                expanded_cap[("Economics", "eq. CO2 price")] = round(eq_co2_price * 1e3, 2)
+
                 run_name = scenario_id
 
                 if (
@@ -1627,56 +1664,58 @@ with t_results:
         st.header("Results Explorer")
 
         if "scenario_metadata" in st.session_state:
-            st.subheader("Scenario Overviews")
+            with st.expander(
+                "Scenario Details", expanded=False
+            ):
 
-            st.caption(
-                "Hydrogen and hydrogen-based derivative demands are reported in Mtpa."
-            )
-
-            scenario_rows = []
-
-            for k, v in st.session_state.scenario_metadata.items():
-                run_nr = st.session_state.scenario_labels.get(k, k)
-                v_split = v.split("|")
-
-                scenario_rows.append(
-                    {
-                        "Run": run_nr,
-                        "Country": v_split[0].strip(),
-                        "Year": v_split[1].strip(),
-                        "Clusters": v_split[2].replace("clusters", "").strip(),
-                        "Resolution": v_split[3].strip(),
-                        "Cost Setup": v_split[4].strip(),
-                        "H2 Demand": v_split[5]
-                        .replace("Mtpa", "")
-                        .replace("H2: ", "")
-                        .strip(),
-                        "Grey Ammonia": v_split[6]
-                        .replace("Mtpa", "")
-                        .replace("Grey ammonia: ", "")
-                        .strip(),
-                        "e-Ammonia": v_split[7]
-                        .replace("Mtpa", "")
-                        .replace("e-ammonia: ", "")
-                        .strip(),
-                        "Grey Methanol": v_split[8]
-                        .replace("Mtpa", "")
-                        .replace("Grey methanol: ", "")
-                        .strip(),
-                        "e-Methanol": v_split[9]
-                        .replace("Mtpa", "")
-                        .replace("e-methanol: ", "")
-                        .strip(),
-                    }
+                st.caption(
+                    "Hydrogen and hydrogen-based derivative demands are reported in Mtpa."
                 )
 
-            scenario_df = pd.DataFrame(scenario_rows)
+                scenario_rows = []
 
-            st.dataframe(
-                scenario_df,
-                hide_index=True,
-                width="stretch",
-            )
+                for k, v in st.session_state.scenario_metadata.items():
+                    run_nr = st.session_state.scenario_labels.get(k, k)
+                    v_split = v.split("|")
+
+                    scenario_rows.append(
+                        {
+                            "Run": run_nr,
+                            "Country": v_split[0].strip(),
+                            "Year": v_split[1].strip(),
+                            "Clusters": v_split[2].replace("clusters", "").strip(),
+                            "Resolution": v_split[3].strip(),
+                            "Cost Setup": v_split[4].strip(),
+                            "H2 Demand": v_split[5]
+                            .replace("Mtpa", "")
+                            .replace("H2: ", "")
+                            .strip(),
+                            "Grey Ammonia": v_split[6]
+                            .replace("Mtpa", "")
+                            .replace("Grey ammonia: ", "")
+                            .strip(),
+                            "e-Ammonia": v_split[7]
+                            .replace("Mtpa", "")
+                            .replace("e-ammonia: ", "")
+                            .strip(),
+                            "Grey Methanol": v_split[8]
+                            .replace("Mtpa", "")
+                            .replace("Grey methanol: ", "")
+                            .strip(),
+                            "e-Methanol": v_split[9]
+                            .replace("Mtpa", "")
+                            .replace("e-methanol: ", "")
+                            .strip(),
+                        }
+                    )
+
+                scenario_df = pd.DataFrame(scenario_rows)
+
+                st.dataframe(
+                    scenario_df,
+                    hide_index=True,
+                    width="stretch",
+                )
 
         available_runs = list(st.session_state.solved_networks.keys())
         label_map = st.session_state.scenario_labels
@@ -1696,12 +1735,12 @@ with t_results:
         result_view = st.radio(
             "Select result view",
             [
+                "Economic comparison",
                 "Commodity cost maps",
                 "Installed capacity",
                 "Dispatch",
                 "System costs",
                 # "Technical comparison",
-                "Economic comparison",
             ],
             horizontal=True,
         )
@@ -2423,15 +2462,52 @@ with t_results:
             df = df / 1e3
 
             df = df[df.index.get_level_values(0).str.contains("Economics")].round(1)
-
             df = df.reset_index().drop(columns=["component"]).set_index("carrier")
 
-            st.bar_chart(
-                df.T,
-                x_label="Scenario",
-                y_label="Annual Cost (Million AUD)",
-                horizontal=True,
+            # df2 = df[~df.index.get_level_values(0).str.contains('CO2')]
+            # st.bar_chart(
+            #     df2.T,
+            #     x_label="Scenario",
+            #      y_label="Annual Cost (Million AUD)",
+            #     horizontal=True,
+            # )
+
+            # 2. Initialize figure with secondary Y axis
+            fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+            # 3. Add Primary Y-axis scatter points
+            fig.add_trace(
+                go.Scatter(
+                    x=df.T.index, y=df.T.Annuity,
+                    name="Annual Cost", mode='markers', marker=dict(color='blue')
+                ),
+                secondary_y=False,
             )
+            fig.add_trace(
+                go.Scatter(
+                    x=df.T.index, y=df.T.Savings,
+                    name="Savings", mode='markers', marker=dict(color='green')
+                ),
+                secondary_y=False,
+            )
+
+            # 4. Add Secondary Y-axis scatter points
+            fig.add_trace(
+                go.Scatter(
+                    x=df.T.index, y=df.T['eq. CO2 price'], 
+                    name="Eq. CO2 Price", mode='markers', marker=dict(color='red')
+                ),
+                secondary_y=True,
+            )
+
+            # 5. Customize axis labels and title
+            fig.update_xaxes(title_text="Scenario")
+            fig.update_yaxes(title_text="Annual Cost (Million AUD)", secondary_y=False, showgrid=False)
+            fig.update_yaxes(title_text="Eq. CO2 Price (AUD / t_CO2)", secondary_y=True, showgrid=False)
+            fig.update_yaxes(rangemode="tozero")
+
+            # 6. Render in Streamlit
+            st.plotly_chart(fig)
 
     else:
         st.info(
