@@ -142,6 +142,10 @@ T_PER_GJ_DIESEL = 42.8  # or MT per PJ
 DEFAULT_E_SHARE = 0.50
 DEFAULT_E_SHARE_PRODUCTION = 0.30
 
+INSURANCE_SCENARIO_RECORD_ID = "20559877"
+INSURANCE_SCENARIO_URL = f"https://zenodo.org/records/{INSURANCE_SCENARIO_RECORD_ID}"
+GREEN_LOCAL_PRODUCTION_SHARES = [20, 40, 60, 80, 100]
+
 # ----- diesel / methanol demand
 # source: Department of Climate Change, Energy, the Environment and Water, Australian Energy Statistics, Table F, August 2025
 # last available data for 2023-24
@@ -412,6 +416,80 @@ def build_scenario_summary(
             f"e-methanol: {demand['e_methanol']:.1f} Mtpa",
         ]
     )
+
+
+def get_network_demand_mtpa(network: pypsa.Network, demand_key: str) -> float:
+    """Return annual demand for a demand entry in Mtpa."""
+    loads = get_loads_for_demand_entry(
+        network,
+        carriers=load_data[demand_key]["carriers"],
+        loads=load_data[demand_key]["loads"],
+    )
+
+    if len(loads) == 0 or demand_key not in MWH_PER_TONNE:
+        return 0.0
+
+    available_loads = loads.intersection(network.loads_t.p.columns)
+
+    if len(available_loads) > 0:
+        annual_mwh = (
+            network.loads_t.p[available_loads]
+            .multiply(network.snapshot_weightings.generators, axis=0)
+            .sum()
+            .sum()
+        )
+    else:
+        annual_mwh = (
+            network.loads.loc[loads, "p_set"].sum()
+            * network.snapshot_weightings.generators.sum()
+        )
+
+    return annual_mwh / MWH_PER_TONNE[demand_key] / 1e6
+
+
+def load_precomputed_insurance_scenarios(nodes: int) -> dict[str, pypsa.Network]:
+    """Download and load precomputed import shock insurance scenarios from Zenodo."""
+    cache_key = f"insurance_scenarios_{nodes}n"
+
+    if cache_key in st.session_state:
+        return st.session_state[cache_key]
+
+    api_url = f"https://zenodo.org/api/records/{INSURANCE_SCENARIO_RECORD_ID}"
+    res = requests.get(api_url)
+    res.raise_for_status()
+    record = res.json()
+
+    scenario_networks = {}
+
+    for share in GREEN_LOCAL_PRODUCTION_SHARES:
+        file_name = f"AU_2030_{nodes}n_greenlocprod{share}_solved.nc"
+
+        file_info = next(
+            (f for f in record["files"] if f["key"] == file_name),
+            None,
+        )
+
+        if file_info is None:
+            raise FileNotFoundError(
+                f"Could not find {file_name} in Zenodo record "
+                f"{INSURANCE_SCENARIO_RECORD_ID}."
+            )
+
+        download_url = file_info["links"]["self"]
+        tmp_path = Path(tempfile.gettempdir()) / file_name
+
+        if not tmp_path.exists():
+            with requests.get(download_url, stream=True) as r:
+                r.raise_for_status()
+                with open(tmp_path, "wb") as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        f.write(chunk)
+
+        scenario_networks[f"greenlocprod{share}"] = pypsa.Network(tmp_path)
+
+    st.session_state[cache_key] = scenario_networks
+
+    return scenario_networks
 
 
 title = "AUS eFuels"
@@ -1623,7 +1701,7 @@ with t_optimization:
 
 # TAB RESULTS
 with t_results:
-    if len(st.session_state.solved_networks) > 0:
+    if st.session_state.n is not None or len(st.session_state.solved_networks) > 0:
         st.header("Results Explorer")
 
         if "scenario_metadata" in st.session_state:
@@ -1702,9 +1780,182 @@ with t_results:
                 "System costs",
                 # "Technical comparison",
                 "Economic comparison",
+                "Import shock insurance",
             ],
             horizontal=True,
         )
+
+        if result_view == "Import shock insurance":
+            st.info("""
+                This analysis uses precomputed optimization results downloaded from Zenodo.
+
+                It is independent from any optimization runs performed in this application and
+                does not use the default Economic Parameters, Demand Parameters or Optimization
+                settings.
+
+                The loaded network is only used to identify the network resolution
+                (10, 15 or 20 nodes) and select the corresponding precomputed scenarios.
+                """)
+            st.markdown(f"""
+                **Dataset source:** [Zenodo record {INSURANCE_SCENARIO_RECORD_ID}]({INSURANCE_SCENARIO_URL})
+
+                Scenarios included:
+                - 20% local green production
+                - 40% local green production
+                - 60% local green production
+                - 80% local green production
+                - 100% local green production
+                """)
+            if st.session_state.n is None:
+                st.info(
+                    "Please load a base network first. The loaded network is used "
+                    "to infer whether the 10, 15 or 20 node insurance scenarios "
+                    "should be downloaded."
+                )
+                st.stop()
+
+            raw_nodes = infer_network_clusters(st.session_state.n)
+
+            nodes = {
+                9: 10,
+                14: 15,
+                19: 20,
+            }.get(raw_nodes, raw_nodes)
+
+            st.markdown(f"""
+                Precomputed insurance scenarios for **{nodes} nodes** are downloaded from
+                [Zenodo]({INSURANCE_SCENARIO_URL}).
+
+                The analysis compares green local production shares of
+                20%, 40%, 60%, 80% and 100%.
+                """)
+
+            try:
+                with st.spinner("Downloading precomputed insurance scenarios..."):
+                    insurance_networks = load_precomputed_insurance_scenarios(nodes)
+
+            except Exception as exc:
+                st.error(f"Could not load precomputed insurance scenarios: {exc}")
+                st.stop()
+
+            baseline_label = st.selectbox(
+                "Select baseline scenario",
+                list(insurance_networks.keys()),
+                index=0,
+            )
+
+            diesel_shocks = st.multiselect(
+                "Diesel-equivalent import price increase (AUD/t)",
+                [0, 150, 300, 450, 600],
+                default=[0, 150, 300, 450, 600],
+            )
+
+            ammonia_shock = st.number_input(
+                "Ammonia import price increase (AUD/t NH3)",
+                min_value=0.0,
+                value=0.0,
+                step=50.0,
+            )
+
+            baseline_network = insurance_networks[baseline_label]
+            baseline_cost = baseline_network.objective / 1e6
+            baseline_meoh = get_network_demand_mtpa(
+                baseline_network,
+                "e_methanol",
+            )
+            baseline_nh3 = get_network_demand_mtpa(
+                baseline_network,
+                "e_ammonia",
+            )
+
+            rows = []
+
+            for scenario_label, scenario_network in insurance_networks.items():
+                scenario_cost = scenario_network.objective / 1e6
+
+                e_meoh = get_network_demand_mtpa(
+                    scenario_network,
+                    "e_methanol",
+                )
+                e_nh3 = get_network_demand_mtpa(
+                    scenario_network,
+                    "e_ammonia",
+                )
+
+                additional_system_cost = scenario_cost - baseline_cost
+                additional_meoh = max(e_meoh - baseline_meoh, 0.0)
+                additional_nh3 = max(e_nh3 - baseline_nh3, 0.0)
+
+                for diesel_shock in diesel_shocks:
+                    avoided_import_expenditure = (
+                        additional_meoh * 1e6 * diesel_shock
+                        + additional_nh3 * 1e6 * ammonia_shock
+                    ) / 1e6
+
+                    insurance_value = (
+                        avoided_import_expenditure - additional_system_cost
+                    )
+
+                    rows.append(
+                        {
+                            "Scenario": scenario_label,
+                            "Diesel-equivalent shock (AUD/t)": diesel_shock,
+                            "Ammonia shock (AUD/t NH3)": ammonia_shock,
+                            "System cost (MAUD/year)": scenario_cost,
+                            "Additional system cost (MAUD/year)": additional_system_cost,
+                            "Avoided import expenditure (MAUD/year)": avoided_import_expenditure,
+                            "Insurance value (MAUD/year)": insurance_value,
+                            "e-methanol demand (Mtpa)": e_meoh,
+                            "e-ammonia demand (Mtpa)": e_nh3,
+                        }
+                    )
+
+            insurance_df = pd.DataFrame(rows)
+
+            st.dataframe(
+                insurance_df.round(2),
+                hide_index=True,
+                width="stretch",
+            )
+
+            chart = (
+                alt.Chart(insurance_df)
+                .mark_line(point=True)
+                .encode(
+                    x=alt.X(
+                        "Diesel-equivalent shock (AUD/t):Q",
+                        title="Diesel-equivalent import price increase (AUD/t)",
+                    ),
+                    y=alt.Y(
+                        "Insurance value (MAUD/year):Q",
+                        title="Insurance value (MAUD/year)",
+                    ),
+                    color=alt.Color("Scenario:N", title="Scenario"),
+                    tooltip=[
+                        "Scenario:N",
+                        alt.Tooltip("Diesel-equivalent shock (AUD/t):Q"),
+                        alt.Tooltip("Ammonia shock (AUD/t NH3):Q"),
+                        alt.Tooltip("System cost (MAUD/year):Q", format=",.2f"),
+                        alt.Tooltip(
+                            "Additional system cost (MAUD/year):Q",
+                            format=",.2f",
+                        ),
+                        alt.Tooltip(
+                            "Avoided import expenditure (MAUD/year):Q",
+                            format=",.2f",
+                        ),
+                        alt.Tooltip(
+                            "Insurance value (MAUD/year):Q",
+                            format=",.2f",
+                        ),
+                    ],
+                )
+                .properties(height=500)
+            )
+
+            st.altair_chart(chart, width="stretch")
+
+            st.stop()
 
         if selected_runs:
             selected_networks = {
