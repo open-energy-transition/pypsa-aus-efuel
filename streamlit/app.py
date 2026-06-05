@@ -11,6 +11,7 @@ to assess the impact of the adjustments on the network's costs.
 import os
 import tempfile
 import time
+import zipfile
 from importlib.metadata import version
 from pathlib import Path
 
@@ -1294,6 +1295,87 @@ with t_optimization:
         new_multiplier = get_effective_demand_parameters()
         st.session_state.new_multiplier = new_multiplier.copy()
         new_cost = st.session_state.new_cost
+
+        st.subheader("Export insurance scenario set")
+
+        st.write(
+            "Export configured networks for the predefined green local production "
+            "shares. These networks include the selected economic parameters and "
+            "demand assumptions, but are not optimized yet."
+        )
+
+        green_local_production_shares = [20, 40, 60, 80, 100]
+
+        if st.button("Prepare insurance scenario set for download"):
+            node_count = infer_network_clusters(st.session_state.n)
+
+            st.write(
+                "Clusters:",
+                infer_network_clusters(st.session_state.n),
+            )
+
+            export_dir = Path(tempfile.mkdtemp())
+            zip_path = export_dir / f"AU_2030_{node_count}n_greenlocprod_scenarios.zip"
+
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                for share in green_local_production_shares:
+                    n_export = st.session_state.n.copy()
+
+                    apply_default_economic_parameters(n_export)
+
+                    diesel_total_remaining = 0.0
+                    for s in sectors:
+                        diesel_total_remaining += sectors[s]["demand"] * (
+                            1 - sectors[s]["e-share"]
+                        )
+
+                    domestic_diesel_supply = st.session_state.get(
+                        "draft_domestic_diesel_supply",
+                        4.5,
+                    )
+
+                    e_methanol_demand = (
+                        share / 100 * (diesel_total_remaining - domestic_diesel_supply)
+                    )
+
+                    ammonia_total_remaining = 0.0
+                    for f in fertilizeres:
+                        ammonia_total_remaining += (
+                            fertilizeres[f]["demand"]
+                            * fertilizeres[f]["ammonia_equiv"]
+                            * (1 - fertilizeres[f]["e-share"])
+                        )
+
+                    domestic_ammonia_supply = st.session_state.get(
+                        "draft_domestic_ammonia_supply",
+                        0.4,
+                    )
+
+                    e_ammonia_demand = (
+                        share
+                        / 100
+                        * (ammonia_total_remaining - domestic_ammonia_supply)
+                    )
+
+                    demand_values = get_effective_demand_parameters()
+                    demand_values["e_methanol"] = e_methanol_demand
+                    demand_values["e_ammonia"] = e_ammonia_demand
+
+                    apply_demand_parameters_to_network(n_export, demand_values)
+
+                    file_name = f"AU_2030_{node_count}n_greenlocprod{share}.nc"
+                    file_path = export_dir / file_name
+
+                    n_export.export_to_netcdf(file_path)
+                    zip_file.write(file_path, arcname=file_name)
+
+            with open(zip_path, "rb") as f:
+                st.download_button(
+                    label="Download insurance scenario set",
+                    data=f,
+                    file_name=zip_path.name,
+                    mime="application/zip",
+                )
 
         st.header("Run Optimization")
 
