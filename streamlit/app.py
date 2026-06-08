@@ -2044,14 +2044,15 @@ with t_results:
 
             scenario_detail_df = scenario_detail_df.rename(
                 columns={
+                    "Scenario": "Local e-fuel production share",
                     "Additional system cost relative to baseline (MAUD/year)": (
-                        "Additional system cost (MAUD/year)"
+                        "Annual insurance cost (MAUD/year)"
                     ),
                     "Additional diesel-equivalent fuel displacement relative to baseline (Mtpa)": (
-                        "Additional diesel-equivalent fuel displacement (Mtpa)"
+                        "Reduced diesel import exposure (Mtpa diesel-eq.)"
                     ),
                     "Additional e-ammonia relative to baseline (Mtpa)": (
-                        "Additional e-ammonia production (Mtpa)"
+                        "Reduced ammonia import exposure (Mtpa NH3)"
                     ),
                 }
             )
