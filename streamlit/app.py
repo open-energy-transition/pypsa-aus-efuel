@@ -142,9 +142,9 @@ T_PER_GJ_DIESEL = 42.8  # or MT per PJ
 DEFAULT_E_SHARE = 0.50
 DEFAULT_E_SHARE_PRODUCTION = 0.30
 
-INSURANCE_SCENARIO_RECORD_ID = "20559877"
+INSURANCE_SCENARIO_RECORD_ID = "20594872"
 INSURANCE_SCENARIO_URL = f"https://zenodo.org/records/{INSURANCE_SCENARIO_RECORD_ID}"
-GREEN_LOCAL_PRODUCTION_SHARES = [20, 40, 60, 80, 100]
+GREEN_LOCAL_PRODUCTION_SHARES = [0, 20, 40, 60, 80, 100]
 
 # ----- diesel / methanol demand
 # source: Department of Climate Change, Energy, the Environment and Water, Australian Energy Statistics, Table F, August 2025
@@ -789,7 +789,7 @@ with t_welcome:
     **Use the sidebar to load your network and set project targets. Then, navigate through the tabs to manage different aspects of your project (economic and demand parameters).**
 
     By default it is assumed that {DEFAULT_E_SHARE * 100}% of the diesel demand can be reduced by electrification.
-    Additionally it is assumed that {DEFAULT_E_SHARE_PRODUCTION * 100}% of the remaining diesel and ammonia demand shall be covered by local green production.
+    Additionally it is assumed that {DEFAULT_E_SHARE_PRODUCTION * 100}% of the remaining diesel and ammonia demand shall be covered by local e-fuel production.
     To review and/or adjust the required methanol and/or ammonia demand settings pull down the relevant pull-down box.
     The calculated e-methanol and e-ammonia production values are automatically transferred to the “Demand Parameters” tab, where they can still be manually adjusted before being applied to the network.
     """)
@@ -1797,11 +1797,12 @@ with t_results:
                 """)
             st.markdown(f"""
                 Scenarios included:
-                - 20% green local production
-                - 40% green local production
-                - 60% green local production
-                - 80% green local production
-                - 100% green local production
+                - 0% local e-fuel production
+                - 20% local e-fuel production
+                - 40% local e-fuel production
+                - 60% local e-fuel production
+                - 80% local e-fuel production
+                - 100% local e-fuel production
                 """)
             if st.session_state.n is None:
                 st.info(
@@ -1833,27 +1834,16 @@ with t_results:
                 st.stop()
 
             scenario_display_labels = {
-                key: f"{key.replace('greenlocprod', '')}% local green production"
-                for key in insurance_networks
+                key: f"{key.replace('greenlocprod', '')}%" for key in insurance_networks
             }
 
-            baseline_label = st.selectbox(
-                "Select baseline scenario",
-                list(insurance_networks.keys()),
-                index=0,
-                format_func=lambda key: scenario_display_labels[key],
+            baseline_label = "greenlocprod0"
+
+            st.info(
+                "All scenarios are compared against the 0% local e-fuel production reference case."
             )
 
-            diesel_shocks = st.multiselect(
-                "Assumed increase in imported fuel prices (AUD/t diesel-equivalent)",
-                [0, 150, 300, 450, 600],
-                default=[0, 150, 300, 450, 600],
-            )
-
-            st.caption(
-                "These are post-processing sensitivity assumptions representing potential increases in imported fuel prices. "
-                "They are not optimized in the model."
-            )
+            diesel_shocks_l = [0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
 
             ammonia_shock = st.number_input(
                 "Assumed ammonia import price shock (AUD/t NH3)",
@@ -1863,7 +1853,7 @@ with t_results:
             )
 
             st.caption(
-                "This shock is applied to additional e-ammonia production relative to the selected baseline."
+                "This shock is applied to additional e-ammonia production relative to the 0% local e-fuel production reference case."
             )
 
             baseline_network = insurance_networks[baseline_label]
@@ -1914,7 +1904,8 @@ with t_results:
                     }
                 )
 
-                for diesel_shock in diesel_shocks:
+                for diesel_shock_l in diesel_shocks_l:
+                    diesel_shock = diesel_shock_l * 1000 / KG_PER_LITER_DIESEL
                     value_of_displaced_import_exposure = (
                         additional_diesel_equivalent * 1e6 * diesel_shock
                         + additional_nh3 * 1e6 * ammonia_shock
@@ -1927,7 +1918,7 @@ with t_results:
                     rows.append(
                         {
                             "Scenario": scenario_display_labels[scenario_label],
-                            "Assumed diesel-equivalent import price increase (AUD/t)": diesel_shock,
+                            "Assumed diesel import price increase (AUD/liter)": diesel_shock_l,
                             "Ammonia import price increase (AUD/t NH3)": ammonia_shock,
                             "System cost (MAUD/year)": scenario_cost,
                             "Additional system cost relative to baseline (MAUD/year)": additional_system_cost,
@@ -1939,64 +1930,47 @@ with t_results:
             insurance_df = pd.DataFrame(rows)
             scenario_detail_df = pd.DataFrame(scenario_detail_rows)
 
-            st.info("""
-                The chart shows the net insurance benefit for each local green
-                production scenario and each assumed import price shock.
-
-                For each scenario and shock level:
-
-                Net insurance benefit =
-                Value of displaced import exposure
-                - Additional system cost relative to the selected baseline.
-
-                Value of displaced import exposure =
-                Additional diesel-equivalent fuel displacement × assumed fuel price shock
-                + additional e-ammonia production × assumed ammonia price shock.
-
-                Additional diesel-equivalent fuel displacement is calculated from
-                additional e-methanol production using the energy-content ratio:
-
-                Additional diesel-equivalent fuel displacement =
-                Additional e-methanol production
-                × MWh per tonne e-methanol
-                / MWh per tonne diesel.
-
-                The analysis does not model imports explicitly. Instead, it estimates
-                the economic value of reducing exposure to imported liquid fuels and
-                ammonia under assumed import price increases.
-                """)
-
-            st.dataframe(
-                insurance_df.round(2),
-                hide_index=True,
-                width="stretch",
-            )
-
-            with st.expander("Show scenario demand details", expanded=False):
-                st.dataframe(
-                    scenario_detail_df.round(2),
-                    hide_index=True,
-                    width="stretch",
-                )
-
             chart = (
                 alt.Chart(insurance_df)
-                .mark_line(point=True)
+                .mark_line(point=True, strokeWidth=3, size=80)
                 .encode(
                     x=alt.X(
-                        "Assumed diesel-equivalent import price increase (AUD/t):Q",
-                        title="Assumed diesel-equivalent import price increase (AUD/t)",
+                        "Assumed diesel import price increase (AUD/liter):Q",
+                        title="Assumed diesel import price increase (AUD/liter)",
+                        axis=alt.Axis(
+                            labelFontSize=18,
+                            titleFontSize=20,
+                        ),
                     ),
                     y=alt.Y(
                         "Net insurance benefit (MAUD/year):Q",
                         title="Net insurance benefit (MAUD/year)",
+                        axis=alt.Axis(
+                            labelFontSize=18,
+                            titleFontSize=20,
+                        ),
                     ),
-                    color=alt.Color("Scenario:N", title="Scenario"),
+                    color=alt.Color(
+                        "Scenario:N",
+                        title="Local e-fuel production share",
+                        scale=alt.Scale(
+                            domain=["0%", "20%", "40%", "60%", "80%", "100%"],
+                        ),
+                        legend=alt.Legend(
+                            orient="bottom",
+                            direction="horizontal",
+                            columns=6,
+                            labelFontSize=18,
+                            titleFontSize=20,
+                            labelLimit=0,
+                            titleLimit=0,
+                        ),
+                    ),
                     tooltip=[
                         "Scenario:N",
                         alt.Tooltip(
-                            "Assumed diesel-equivalent import price increase (AUD/t):Q",
-                            format=",.0f",
+                            "Assumed diesel import price increase (AUD/liter):Q",
+                            format=".1f",
                         ),
                         alt.Tooltip(
                             "Ammonia import price increase (AUD/t NH3):Q",
@@ -2020,10 +1994,33 @@ with t_results:
                         ),
                     ],
                 )
-                .properties(height=500)
+                .properties(height=750)
             )
 
             st.altair_chart(chart, width="stretch")
+
+            st.info("""
+                **How to read this chart**
+
+                - Each line represents a different level of **local e-fuel production** (0-100%). The same share is applied to both e-methanol production for diesel replacement and e-ammonia production for fertilizer demand.
+                - The **x-axis** shows hypothetical increases in imported diesel prices (AUD/liter).
+                - The **y-axis** shows the **net insurance benefit** (MAUD/year).
+
+                Negative values mean the additional cost of domestic e-fuel production is larger than the value of reduced import exposure.
+
+                Positive values mean the value of reduced exposure to import price shocks exceeds the additional system cost.
+
+                The point where a line crosses **0 MAUD/year** indicates the diesel import price increase at which that local production level becomes economically justified from an insurance perspective.
+
+                This analysis does not explicitly model imports. It estimates the value of reducing exposure to future import price increases using precomputed PyPSA scenarios.
+                """)
+
+            with st.expander("Show scenario demand details", expanded=False):
+                st.dataframe(
+                    scenario_detail_df.round(2),
+                    hide_index=True,
+                    width="stretch",
+                )
 
             st.stop()
 
