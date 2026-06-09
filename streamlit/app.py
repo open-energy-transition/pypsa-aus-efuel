@@ -779,8 +779,9 @@ tabs = [
     "| 2. 📊 Demands",
     "| 3. ⚡ Optimization",
     "| 4. 📈 Results",
+    "| 5. 🛡️ Import shock insurance ",
 ]
-t_welcome, t_economic, t_demand, t_optimization, t_results = st.tabs(tabs)
+t_welcome, t_economic, t_demand, t_optimization, t_results, t_insurance = st.tabs(tabs)
 
 # TAB WELCOME
 with t_welcome:
@@ -1780,294 +1781,9 @@ with t_results:
                 "System costs",
                 # "Technical comparison",
                 "Economic comparison",
-                "Import shock insurance",
             ],
             horizontal=True,
         )
-
-        if result_view == "Import shock insurance":
-            st.info("""
-                This analysis uses precomputed optimization results downloaded from Zenodo.
-
-                It is independent from any optimization runs performed in this application and
-                does not use the Economic Parameters, Demand Parameters or Optimization settings configured in this session.
-
-                The loaded network is only used to identify the network resolution
-                (10, 15 or 20 nodes) and select the corresponding precomputed scenarios.
-                """)
-            st.markdown(f"""
-                Scenarios included:
-                - 0% local e-fuel production
-                - 20% local e-fuel production
-                - 40% local e-fuel production
-                - 60% local e-fuel production
-                - 80% local e-fuel production
-                - 100% local e-fuel production
-                """)
-            if st.session_state.n is None:
-                st.info(
-                    "Please load a base network first. The loaded network is used "
-                    "to infer whether the 10, 15 or 20 node insurance scenarios "
-                    "should be downloaded."
-                )
-                st.stop()
-
-            raw_nodes = infer_network_clusters(st.session_state.n)
-
-            nodes = {
-                9: 10,
-                14: 15,
-                19: 20,
-            }.get(raw_nodes, raw_nodes)
-
-            st.markdown(f"""
-                Precomputed insurance scenarios for **{nodes} nodes** are downloaded from
-                [Zenodo]({INSURANCE_SCENARIO_URL}).
-                """)
-
-            try:
-                with st.spinner("Downloading precomputed insurance scenarios..."):
-                    insurance_networks = load_precomputed_insurance_scenarios(nodes)
-
-            except Exception as exc:
-                st.error(f"Could not load precomputed insurance scenarios: {exc}")
-                st.stop()
-
-            scenario_display_labels = {
-                key: f"{key.replace('greenlocprod', '')}%" for key in insurance_networks
-            }
-
-            baseline_label = "greenlocprod0"
-
-            st.info(
-                "All scenarios are compared against the 0% local e-fuel production reference case."
-            )
-
-            diesel_shocks_l = [0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
-            ammonia_shocks = [
-                0,
-                300,
-                600,
-                900,
-                1200,
-                1500,
-                1800,
-                2100,
-                2400,
-                2700,
-                3000,
-            ]
-
-            baseline_network = insurance_networks[baseline_label]
-            baseline_cost = baseline_network.objective / 1e6
-            baseline_meoh = get_network_demand_mtpa(baseline_network, "e_methanol")
-            baseline_nh3 = get_network_demand_mtpa(baseline_network, "e_ammonia")
-
-            diesel_rows = []
-            ammonia_rows = []
-            scenario_detail_rows = []
-
-            for scenario_label, scenario_network in insurance_networks.items():
-                scenario_cost = scenario_network.objective / 1e6
-
-                e_meoh = get_network_demand_mtpa(scenario_network, "e_methanol")
-                e_nh3 = get_network_demand_mtpa(scenario_network, "e_ammonia")
-
-                additional_system_cost = scenario_cost - baseline_cost
-                additional_green_fuel = max(e_meoh - baseline_meoh, 0.0)
-                additional_diesel_equivalent = (
-                    additional_green_fuel
-                    * MWH_PER_TONNE["e_methanol"]
-                    / MWH_PER_TONNE["diesel"]
-                )
-                additional_nh3 = max(e_nh3 - baseline_nh3, 0.0)
-
-                scenario_detail_rows.append(
-                    {
-                        "Scenario": scenario_display_labels[scenario_label],
-                        "System cost (MAUD/year)": scenario_cost,
-                        "Additional system cost relative to baseline (MAUD/year)": additional_system_cost,
-                        "e-methanol production for diesel replacement (Mtpa)": e_meoh,
-                        "e-ammonia production (Mtpa)": e_nh3,
-                        "Additional e-methanol relative to baseline (Mtpa)": additional_green_fuel,
-                        "Additional diesel-equivalent fuel displacement relative to baseline (Mtpa)": additional_diesel_equivalent,
-                        "Additional e-ammonia relative to baseline (Mtpa)": additional_nh3,
-                    }
-                )
-
-                for diesel_shock_l in diesel_shocks_l:
-                    diesel_shock = diesel_shock_l * 1000 / KG_PER_LITER_DIESEL
-
-                    value_of_displaced_import_exposure = (
-                        additional_diesel_equivalent * 1e6 * diesel_shock
-                    ) / 1e6
-
-                    net_insurance_benefit = (
-                        value_of_displaced_import_exposure - additional_system_cost
-                    )
-
-                    diesel_rows.append(
-                        {
-                            "Scenario": scenario_display_labels[scenario_label],
-                            "Assumed diesel import price increase (AUD/liter)": diesel_shock_l,
-                            "System cost (MAUD/year)": scenario_cost,
-                            "Additional system cost relative to baseline (MAUD/year)": additional_system_cost,
-                            "Value of displaced import exposure (MAUD/year)": value_of_displaced_import_exposure,
-                            "Net insurance benefit (MAUD/year)": net_insurance_benefit,
-                        }
-                    )
-
-                for ammonia_shock in ammonia_shocks:
-                    value_of_displaced_import_exposure = (
-                        additional_nh3 * 1e6 * ammonia_shock
-                    ) / 1e6
-
-                    net_insurance_benefit = (
-                        value_of_displaced_import_exposure - additional_system_cost
-                    )
-
-                    ammonia_rows.append(
-                        {
-                            "Scenario": scenario_display_labels[scenario_label],
-                            "Assumed ammonia import price increase (AUD/t NH3)": ammonia_shock,
-                            "System cost (MAUD/year)": scenario_cost,
-                            "Additional system cost relative to baseline (MAUD/year)": additional_system_cost,
-                            "Value of displaced import exposure (MAUD/year)": value_of_displaced_import_exposure,
-                            "Net insurance benefit (MAUD/year)": net_insurance_benefit,
-                        }
-                    )
-
-            diesel_df = pd.DataFrame(diesel_rows)
-            ammonia_df = pd.DataFrame(ammonia_rows)
-            scenario_detail_df = pd.DataFrame(scenario_detail_rows)
-
-            def make_insurance_chart(df, x_col, x_title):
-                return (
-                    alt.Chart(df)
-                    .mark_line(point=True, strokeWidth=3, size=80)
-                    .encode(
-                        x=alt.X(
-                            f"{x_col}:Q",
-                            title=x_title,
-                            axis=alt.Axis(labelFontSize=18, titleFontSize=20),
-                        ),
-                        y=alt.Y(
-                            "Net insurance benefit (MAUD/year):Q",
-                            title="Net insurance benefit (MAUD/year)",
-                            axis=alt.Axis(labelFontSize=18, titleFontSize=20),
-                        ),
-                        color=alt.Color(
-                            "Scenario:N",
-                            title="Local e-fuel production share",
-                            scale=alt.Scale(
-                                domain=["0%", "20%", "40%", "60%", "80%", "100%"],
-                            ),
-                            legend=alt.Legend(
-                                orient="bottom",
-                                direction="horizontal",
-                                columns=6,
-                                labelFontSize=18,
-                                titleFontSize=20,
-                                labelLimit=0,
-                                titleLimit=0,
-                            ),
-                        ),
-                        tooltip=[
-                            "Scenario:N",
-                            alt.Tooltip(f"{x_col}:Q", format=",.2f"),
-                            alt.Tooltip("System cost (MAUD/year):Q", format=",.2f"),
-                            alt.Tooltip(
-                                "Additional system cost relative to baseline (MAUD/year):Q",
-                                format=",.2f",
-                            ),
-                            alt.Tooltip(
-                                "Value of displaced import exposure (MAUD/year):Q",
-                                format=",.2f",
-                            ),
-                            alt.Tooltip(
-                                "Net insurance benefit (MAUD/year):Q",
-                                format=",.2f",
-                            ),
-                        ],
-                    )
-                    .properties(height=650)
-                )
-
-            st.subheader("Diesel import shock insurance")
-            st.altair_chart(
-                make_insurance_chart(
-                    diesel_df,
-                    "Assumed diesel import price increase (AUD/liter)",
-                    "Assumed diesel import price increase (AUD/liter)",
-                ),
-                width="stretch",
-            )
-
-            st.subheader("Ammonia import shock insurance")
-            st.altair_chart(
-                make_insurance_chart(
-                    ammonia_df,
-                    "Assumed ammonia import price increase (AUD/t NH3)",
-                    "Assumed ammonia import price increase (AUD/t NH3)",
-                ),
-                width="stretch",
-            )
-
-            st.info("""
-                **How to interpret these charts**
-
-                The charts estimate the **insurance value of domestic e-fuel production** against import price shocks.
-
-                * Each line represents a different level of **local e-fuel production** (0–100%). The same share is applied to both **e-methanol** production for diesel replacement and **e-ammonia** production for fertilizer demand.
-                * The first chart shows the insurance value against **imported diesel price shocks**.
-                * The second chart shows the insurance value against **imported ammonia price shocks**.
-                * The **y-axis** shows the **net insurance benefit** (MAUD/year), calculated as the estimated value of reduced import exposure minus the additional annual system cost relative to the **0% local e-fuel production reference case**.
-
-                At **zero import price shock**, the net insurance benefit is negative and equal to the additional annual system cost associated with domestic e-fuel production. As import prices increase, the value of reducing import exposure increases and the net insurance benefit improves.
-
-                The additional annual system cost is calculated as the difference in **PyPSA-AUS objective value** between each scenario and the **0% local e-fuel production reference case**.
-
-                The point where a line crosses **0 MAUD/year** indicates the import price increase at which that level of local e-fuel production breaks even from an insurance perspective.
-
-                This analysis does not explicitly model imports. Instead, it estimates the value of reducing exposure to future import price increases using pre-computed PyPSA-AUS scenarios.
-
-                """)
-
-            scenario_detail_df = scenario_detail_df[
-                [
-                    "Scenario",
-                    "Additional system cost relative to baseline (MAUD/year)",
-                    "Additional diesel-equivalent fuel displacement relative to baseline (Mtpa)",
-                    "Additional e-ammonia relative to baseline (Mtpa)",
-                ]
-            ]
-
-            scenario_detail_df = scenario_detail_df.rename(
-                columns={
-                    "Scenario": "Local e-fuel production share",
-                    "Additional system cost relative to baseline (MAUD/year)": (
-                        "Annual insurance cost (MAUD/year)"
-                    ),
-                    "Additional diesel-equivalent fuel displacement relative to baseline (Mtpa)": (
-                        "Reduced diesel import exposure (Mtpa diesel-eq.)"
-                    ),
-                    "Additional e-ammonia relative to baseline (Mtpa)": (
-                        "Reduced ammonia import exposure (Mtpa NH3)"
-                    ),
-                }
-            )
-
-            with st.expander(
-                "Show underlying assumptions for each production scenario",
-                expanded=False,
-            ):
-                st.dataframe(
-                    scenario_detail_df.round(2),
-                    hide_index=True,
-                    width="stretch",
-                )
-
-            st.stop()
 
         if selected_runs:
             selected_networks = {
@@ -2808,3 +2524,272 @@ with t_results:
         st.write("""
             After running an optimization, you will see a detailed breakdown of the expanded capacities and economic outcomes for each technology, allowing you to assess the impact of your parameter adjustments on the network's performance and costs.
             """)
+
+# TAB IMPORT SHOCK INSURANCE
+with t_insurance:
+    st.header("Import Shock Insurance")
+    st.info("""
+    This analysis uses precomputed optimization results downloaded from Zenodo.
+
+    It is completely independent from any optimization runs performed in this application and does not use the Economic Parameters, Demand Parameters or Optimization settings configured in this session.
+
+    The analysis is based on a fixed set of precomputed **20-node PyPSA-AUS scenarios**, ranging from 0% to 100% local e-fuel production.
+    """)
+    st.markdown(f"""
+        Scenarios included:
+        - 0% local e-fuel production
+        - 20% local e-fuel production
+        - 40% local e-fuel production
+        - 60% local e-fuel production
+        - 80% local e-fuel production
+        - 100% local e-fuel production
+        """)
+
+    nodes = 20
+
+    st.markdown(f"""
+        Precomputed insurance scenarios for **{nodes} nodes** are downloaded from
+        [Zenodo]({INSURANCE_SCENARIO_URL}).
+    """)
+
+    try:
+        with st.spinner("Downloading precomputed insurance scenarios..."):
+            insurance_networks = load_precomputed_insurance_scenarios(nodes)
+
+    except Exception as exc:
+        st.error(f"Could not load precomputed insurance scenarios: {exc}")
+        st.stop()
+
+    scenario_display_labels = {
+        key: f"{key.replace('greenlocprod', '')}%" for key in insurance_networks
+    }
+
+    baseline_label = "greenlocprod0"
+
+    st.info(
+        "All scenarios are compared against the 0% local e-fuel production reference case."
+    )
+
+    diesel_shocks_l = [0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
+    ammonia_shocks = [
+        0,
+        300,
+        600,
+        900,
+        1200,
+        1500,
+        1800,
+        2100,
+        2400,
+        2700,
+        3000,
+    ]
+
+    baseline_network = insurance_networks[baseline_label]
+    baseline_cost = baseline_network.objective / 1e6
+    baseline_meoh = get_network_demand_mtpa(baseline_network, "e_methanol")
+    baseline_nh3 = get_network_demand_mtpa(baseline_network, "e_ammonia")
+
+    diesel_rows = []
+    ammonia_rows = []
+    scenario_detail_rows = []
+
+    for scenario_label, scenario_network in insurance_networks.items():
+        scenario_cost = scenario_network.objective / 1e6
+
+        e_meoh = get_network_demand_mtpa(scenario_network, "e_methanol")
+        e_nh3 = get_network_demand_mtpa(scenario_network, "e_ammonia")
+
+        additional_system_cost = scenario_cost - baseline_cost
+        additional_green_fuel = max(e_meoh - baseline_meoh, 0.0)
+        additional_diesel_equivalent = (
+            additional_green_fuel
+            * MWH_PER_TONNE["e_methanol"]
+            / MWH_PER_TONNE["diesel"]
+        )
+        additional_nh3 = max(e_nh3 - baseline_nh3, 0.0)
+
+        scenario_detail_rows.append(
+            {
+                "Scenario": scenario_display_labels[scenario_label],
+                "System cost (MAUD/year)": scenario_cost,
+                "Additional system cost relative to baseline (MAUD/year)": additional_system_cost,
+                "e-methanol production for diesel replacement (Mtpa)": e_meoh,
+                "e-ammonia production (Mtpa)": e_nh3,
+                "Additional e-methanol relative to baseline (Mtpa)": additional_green_fuel,
+                "Additional diesel-equivalent fuel displacement relative to baseline (Mtpa)": additional_diesel_equivalent,
+                "Additional e-ammonia relative to baseline (Mtpa)": additional_nh3,
+            }
+        )
+
+        for diesel_shock_l in diesel_shocks_l:
+            diesel_shock = diesel_shock_l * 1000 / KG_PER_LITER_DIESEL
+
+            value_of_displaced_import_exposure = (
+                additional_diesel_equivalent * 1e6 * diesel_shock
+            ) / 1e6
+
+            net_insurance_benefit = (
+                value_of_displaced_import_exposure - additional_system_cost
+            )
+
+            diesel_rows.append(
+                {
+                    "Scenario": scenario_display_labels[scenario_label],
+                    "Assumed diesel import price increase (AUD/liter)": diesel_shock_l,
+                    "System cost (MAUD/year)": scenario_cost,
+                    "Additional system cost relative to baseline (MAUD/year)": additional_system_cost,
+                    "Value of displaced import exposure (MAUD/year)": value_of_displaced_import_exposure,
+                    "Net insurance benefit (MAUD/year)": net_insurance_benefit,
+                }
+            )
+
+        for ammonia_shock in ammonia_shocks:
+            value_of_displaced_import_exposure = (
+                additional_nh3 * 1e6 * ammonia_shock
+            ) / 1e6
+
+            net_insurance_benefit = (
+                value_of_displaced_import_exposure - additional_system_cost
+            )
+
+            ammonia_rows.append(
+                {
+                    "Scenario": scenario_display_labels[scenario_label],
+                    "Assumed ammonia import price increase (AUD/t NH3)": ammonia_shock,
+                    "System cost (MAUD/year)": scenario_cost,
+                    "Additional system cost relative to baseline (MAUD/year)": additional_system_cost,
+                    "Value of displaced import exposure (MAUD/year)": value_of_displaced_import_exposure,
+                    "Net insurance benefit (MAUD/year)": net_insurance_benefit,
+                }
+            )
+
+    diesel_df = pd.DataFrame(diesel_rows)
+    ammonia_df = pd.DataFrame(ammonia_rows)
+    scenario_detail_df = pd.DataFrame(scenario_detail_rows)
+
+    def make_insurance_chart(df, x_col, x_title):
+        return (
+            alt.Chart(df)
+            .mark_line(point=True, strokeWidth=3, size=80)
+            .encode(
+                x=alt.X(
+                    f"{x_col}:Q",
+                    title=x_title,
+                    axis=alt.Axis(labelFontSize=18, titleFontSize=20),
+                ),
+                y=alt.Y(
+                    "Net insurance benefit (MAUD/year):Q",
+                    title="Net insurance benefit (MAUD/year)",
+                    axis=alt.Axis(labelFontSize=18, titleFontSize=20),
+                ),
+                color=alt.Color(
+                    "Scenario:N",
+                    title="Local e-fuel production share",
+                    scale=alt.Scale(
+                        domain=["0%", "20%", "40%", "60%", "80%", "100%"],
+                    ),
+                    legend=alt.Legend(
+                        orient="bottom",
+                        direction="horizontal",
+                        columns=6,
+                        labelFontSize=18,
+                        titleFontSize=20,
+                        labelLimit=0,
+                        titleLimit=0,
+                    ),
+                ),
+                tooltip=[
+                    "Scenario:N",
+                    alt.Tooltip(f"{x_col}:Q", format=",.2f"),
+                    alt.Tooltip("System cost (MAUD/year):Q", format=",.2f"),
+                    alt.Tooltip(
+                        "Additional system cost relative to baseline (MAUD/year):Q",
+                        format=",.2f",
+                    ),
+                    alt.Tooltip(
+                        "Value of displaced import exposure (MAUD/year):Q",
+                        format=",.2f",
+                    ),
+                    alt.Tooltip(
+                        "Net insurance benefit (MAUD/year):Q",
+                        format=",.2f",
+                    ),
+                ],
+            )
+            .properties(height=650)
+        )
+
+    st.subheader("Diesel import shock insurance")
+    st.altair_chart(
+        make_insurance_chart(
+            diesel_df,
+            "Assumed diesel import price increase (AUD/liter)",
+            "Assumed diesel import price increase (AUD/liter)",
+        ),
+        width="stretch",
+    )
+
+    st.subheader("Ammonia import shock insurance")
+    st.altair_chart(
+        make_insurance_chart(
+            ammonia_df,
+            "Assumed ammonia import price increase (AUD/t NH3)",
+            "Assumed ammonia import price increase (AUD/t NH3)",
+        ),
+        width="stretch",
+    )
+
+    st.info("""
+        **How to interpret these charts**
+
+        The charts estimate the **insurance value of domestic e-fuel production** against import price shocks.
+
+        * Each line represents a different level of **local e-fuel production** (0–100%). The same share is applied to both **e-methanol** production for diesel replacement and **e-ammonia** production for fertilizer demand.
+        * The first chart shows the insurance value against **imported diesel price shocks**.
+        * The second chart shows the insurance value against **imported ammonia price shocks**.
+        * The **y-axis** shows the **net insurance benefit** (MAUD/year), calculated as the estimated value of reduced import exposure minus the additional annual system cost relative to the **0% local e-fuel production reference case**.
+
+        At **zero import price shock**, the net insurance benefit is negative and equal to the additional annual system cost associated with domestic e-fuel production. As import prices increase, the value of reducing import exposure increases and the net insurance benefit improves.
+
+        The additional annual system cost is calculated as the difference in **PyPSA-AUS objective value** between each scenario and the **0% local e-fuel production reference case**.
+
+        The point where a line crosses **0 MAUD/year** indicates the import price increase at which that level of local e-fuel production breaks even from an insurance perspective.
+
+        This analysis does not explicitly model imports. Instead, it estimates the value of reducing exposure to future import price increases using pre-computed PyPSA-AUS scenarios.
+
+        """)
+
+    scenario_detail_df = scenario_detail_df[
+        [
+            "Scenario",
+            "Additional system cost relative to baseline (MAUD/year)",
+            "Additional diesel-equivalent fuel displacement relative to baseline (Mtpa)",
+            "Additional e-ammonia relative to baseline (Mtpa)",
+        ]
+    ]
+
+    scenario_detail_df = scenario_detail_df.rename(
+        columns={
+            "Scenario": "Local e-fuel production share",
+            "Additional system cost relative to baseline (MAUD/year)": (
+                "Annual insurance cost (MAUD/year)"
+            ),
+            "Additional diesel-equivalent fuel displacement relative to baseline (Mtpa)": (
+                "Reduced diesel import exposure (Mtpa diesel-eq.)"
+            ),
+            "Additional e-ammonia relative to baseline (Mtpa)": (
+                "Reduced ammonia import exposure (Mtpa NH3)"
+            ),
+        }
+    )
+
+    with st.expander(
+        "Show underlying assumptions for each production scenario",
+        expanded=False,
+    ):
+        st.dataframe(
+            scenario_detail_df.round(2),
+            hide_index=True,
+            width="stretch",
+        )
