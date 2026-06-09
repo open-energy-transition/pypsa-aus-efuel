@@ -1618,6 +1618,7 @@ with t_optimization:
                             assign_all_duals=False,
                             solver_options=solver_options,
                             remote=remote,
+                            include_objective_constant=True,
                         )
 
                 except Exception as exc:
@@ -1708,10 +1709,6 @@ with t_results:
         if "scenario_metadata" in st.session_state:
             st.subheader("Scenario Overviews")
 
-            st.caption(
-                "Hydrogen and hydrogen-based derivative demands are reported in Mtpa."
-            )
-
             scenario_rows = []
 
             for k, v in st.session_state.scenario_metadata.items():
@@ -1751,770 +1748,784 @@ with t_results:
 
             scenario_df = pd.DataFrame(scenario_rows)
 
-            st.dataframe(
-                scenario_df,
-                hide_index=True,
-                width="stretch",
-            )
-
-        available_runs = list(st.session_state.solved_networks.keys())
-        label_map = st.session_state.scenario_labels
-
-        run_lookup = {label_map.get(run, run): run for run in available_runs}
-
-        selected_labels = st.multiselect(
-            "Select solved scenarios",
-            list(run_lookup.keys()),
-            default=list(run_lookup.keys()),
-            width="stretch",
-        )
-
-        selected_runs = [run_lookup[label] for label in selected_labels]
-
-        st.write("")
-        result_view = st.radio(
-            "Select result view",
-            [
-                "Commodity cost maps",
-                "Installed capacity",
-                "Dispatch",
-                "System costs",
-                # "Technical comparison",
-                "Economic comparison",
-            ],
-            horizontal=True,
-        )
-
-        if selected_runs:
-            selected_networks = {
-                label_map.get(run, run): st.session_state.solved_networks[run]
-                for run in selected_runs
-            }
-
-            st.subheader(result_view)
-
-            # INSTALLED CAPACITY
-
-            if result_view == "Installed capacity":
-                category = st.radio(
-                    "Select result category",
-                    get_available_result_categories(),
-                    horizontal=True,
+            if len(scenario_df) > 0:
+                st.caption(
+                    "Hydrogen and hydrogen-based derivative demands are reported in Mtpa."
                 )
 
-                if category == "Electricity":
-                    cap_df = compute_capacity_by_carrier(
-                        selected_networks,
-                        category,
-                    )
-                    y_label = "GW"
-                    result_title = "Electricity - Installed capacity"
-
-                elif category == "CO2 capture":
-                    cap_df = compute_annual_flow_by_carrier(
-                        selected_networks,
-                        category,
-                        MWH_PER_TONNE,
-                    )
-                    y_label = "Mtpa"
-                    result_title = "CO2 capture - Annual capture"
-
-                else:
-                    cap_df = compute_annual_flow_by_carrier(
-                        selected_networks,
-                        category,
-                        MWH_PER_TONNE,
-                    )
-                    y_label = "Mtpa"
-                    result_title = f"{category} - Annual production capacity"
-
-                st.subheader(result_title)
-
-                if cap_df.empty:
-                    st.warning(f"No result data found for {category}.")
-
-                else:
-                    chart_df = cap_df.pivot_table(
-                        index="scenario",
-                        columns="carrier",
-                        values="value",
-                        aggfunc="sum",
-                        fill_value=0.0,
-                    )
-
-                    plot_df = chart_df.reset_index().melt(
-                        id_vars="scenario",
-                        var_name="Technology",
-                        value_name="Value",
-                    )
-
-                    tech_totals = plot_df.groupby("Technology")["Value"].sum()
-
-                    shown_techs = [
-                        tech
-                        for tech in DISPATCH_COLORS
-                        if tech in tech_totals.index and tech_totals[tech] > 0
-                    ]
-
-                    chart = (
-                        alt.Chart(plot_df)
-                        .mark_bar()
-                        .encode(
-                            x=alt.X(
-                                "scenario:N",
-                                title="Scenario",
-                                axis=alt.Axis(labelAngle=0),
-                            ),
-                            y=alt.Y(
-                                "Value:Q",
-                                stack="zero",
-                                title=y_label,
-                            ),
-                            color=alt.Color(
-                                "Technology:N",
-                                title="Technology",
-                                scale=alt.Scale(
-                                    domain=shown_techs,
-                                    range=[DISPATCH_COLORS[t] for t in shown_techs],
-                                ),
-                            ),
-                            tooltip=[
-                                alt.Tooltip("scenario:N"),
-                                alt.Tooltip("Technology:N"),
-                                alt.Tooltip(
-                                    "Value:Q",
-                                    format=",.2f",
-                                ),
-                            ],
-                        )
-                        .properties(height=600)
-                    )
-
-                    st.altair_chart(chart, width="stretch")
-
-                    APP_DIR = Path(__file__).resolve().parent
-
-                    shape_path = (
-                        APP_DIR / "data" / "shapes" / "australia_states.geojson"
-                    )
-
-                    try:
-                        shapes = gpd.read_file(shape_path)
-
-                        map_unit = "GW" if category == "Electricity" else "Mtpa"
-
-                        for capacity_run in selected_runs:
-                            capacity_label = label_map.get(
-                                capacity_run,
-                                capacity_run,
-                            )
-
-                            st.markdown(f"### Scenario {capacity_label}")
-
-                            capacity_by_bus = compute_capacity_by_bus(
-                                st.session_state.solved_networks[capacity_run],
-                                category,
-                            )
-
-                            if capacity_by_bus.empty:
-                                st.warning(
-                                    f"No mapped capacity data found for scenario {capacity_label}."
-                                )
-                                continue
-
-                            n_map = st.session_state.solved_networks[capacity_run]
-
-                            map_network = None
-
-                            if category == "Electricity":
-                                map_network = n_map
-
-                            fig = plot_capacity_map_by_bus(
-                                capacity_by_bus,
-                                shapes,
-                                DISPATCH_COLORS,
-                                network=map_network,
-                                unit=map_unit,
-                            )
-
-                            st.pyplot(fig, width="content")
-
-                    except Exception as exc:
-                        st.error(f"Could not build capacity map: {exc}")
-
-                    table_df = (
-                        cap_df.drop(
-                            columns=["component"],
-                            errors="ignore",
-                        )
-                        .pivot_table(
-                            index=["carrier", "unit"],
-                            columns="scenario",
-                            values="value",
-                            aggfunc="sum",
-                            fill_value=0.0,
-                        )
-                        .reset_index()
-                        .rename(
-                            columns={
-                                "carrier": "Carrier",
-                                "unit": "Unit",
-                            }
-                        )
-                    )
-
-                    with st.expander(
-                        f"Show {category} data table",
-                        expanded=False,
-                    ):
-                        st.dataframe(
-                            table_df,
-                            width="stretch",
-                            hide_index=True,
-                        )
-
-            # DISPATCH
-
-            elif result_view == "Dispatch":
-                dispatch_category = st.radio(
-                    "Select dispatch category",
-                    get_available_dispatch_categories(),
-                    horizontal=True,
+                st.dataframe(
+                    scenario_df,
+                    hide_index=True,
+                    width="stretch",
                 )
 
-                dispatch_scope = st.radio(
-                    "Select dispatch aggregation",
-                    ["National", "By state"],
-                    horizontal=True,
+                available_runs = list(st.session_state.solved_networks.keys())
+                label_map = st.session_state.scenario_labels
+
+                run_lookup = {label_map.get(run, run): run for run in available_runs}
+
+                selected_labels = st.multiselect(
+                    "Select solved scenarios",
+                    list(run_lookup.keys()),
+                    default=list(run_lookup.keys()),
+                    width="stretch",
                 )
 
-                resample_options = [
-                    "Original",
-                    "Daily mean",
-                    "Weekly mean",
-                ]
+                selected_runs = [run_lookup[label] for label in selected_labels]
 
-                APP_DIR = Path(__file__).resolve().parent
-                shape_path = APP_DIR / "data" / "shapes" / "australia_states.geojson"
-
-                states = None
-                selected_state = None
-
-                if dispatch_scope == "By state":
-                    try:
-                        states = gpd.read_file(shape_path)
-                        state_dispatch_all = compute_dispatch_by_carrier_and_state(
-                            st.session_state.solved_networks[selected_runs[0]],
-                            dispatch_category,
-                            states,
-                        )
-
-                        available_states = sorted(
-                            state_dispatch_all["state"].dropna().unique()
-                        )
-
-                        selected_state = st.selectbox(
-                            "Select state",
-                            available_states,
-                        )
-                    except Exception as exc:
-                        st.error(f"Could not load state shapes: {exc}")
-                        st.stop()
-
-                for dispatch_run in selected_runs:
-                    dispatch_label = label_map.get(
-                        dispatch_run,
-                        dispatch_run,
-                    )
-
-                    n_dispatch = st.session_state.solved_networks[dispatch_run]
-
-                    if dispatch_scope == "National":
-                        dispatch_df = compute_dispatch_by_carrier(
-                            n_dispatch,
-                            dispatch_category,
-                        )
-
-                    else:
-                        state_dispatch = compute_dispatch_by_carrier_and_state(
-                            n_dispatch,
-                            dispatch_category,
-                            states,
-                        )
-
-                        if state_dispatch.empty:
-                            dispatch_df = pd.DataFrame()
-
-                        else:
-                            dispatch_df = (
-                                state_dispatch[
-                                    state_dispatch["state"] == selected_state
-                                ]
-                                .drop(columns=["state"])
-                                .set_index("snapshot")
-                            )
-
-                            dispatch_df.index = pd.to_datetime(dispatch_df.index)
-
-                    n_snapshots = len(dispatch_df)
-
-                    if n_snapshots <= 100:
-                        default_index = 0
-                    elif n_snapshots <= 500:
-                        default_index = 1
-                    else:
-                        default_index = 2
-
-                    dispatch_resample = st.selectbox(
-                        f"Resample dispatch visualization for scenario {dispatch_label}",
-                        resample_options,
-                        index=default_index,
-                        key=f"dispatch_resample_{dispatch_label}_{dispatch_category}_{dispatch_scope}_{selected_state}",
-                    )
-
-                    y_label = "GW" if dispatch_category == "Electricity" else "kt"
-
-                    if dispatch_scope == "National":
-                        st.markdown(f"### Scenario {dispatch_label}")
-                    else:
-                        st.markdown(f"### Scenario {dispatch_label} - {selected_state}")
-
-                    if dispatch_df.empty:
-                        st.warning(
-                            f"No dispatch data found for {dispatch_category}"
-                            + (
-                                f" in {selected_state}."
-                                if dispatch_scope == "By state"
-                                else "."
-                            )
-                        )
-                        continue
-
-                    plot_dispatch_df = dispatch_df.copy()
-
-                    if dispatch_resample == "Daily mean":
-                        plot_dispatch_df = plot_dispatch_df.resample("D").mean()
-
-                    elif dispatch_resample == "Weekly mean":
-                        plot_dispatch_df = plot_dispatch_df.resample("W").mean()
-
-                    plot_df = plot_dispatch_df.reset_index().melt(
-                        id_vars=(plot_dispatch_df.index.name or "index"),
-                        var_name="Technology",
-                        value_name="Value",
-                    )
-
-                    time_col = plot_dispatch_df.index.name or "index"
-
-                    tech_totals = plot_df.groupby("Technology")["Value"].sum()
-
-                    shown_techs = [
-                        tech
-                        for tech in DISPATCH_COLORS
-                        if tech in tech_totals.index and tech_totals[tech] > 0
-                    ]
-
-                    chart = (
-                        alt.Chart(plot_df)
-                        .mark_area()
-                        .encode(
-                            x=alt.X(
-                                f"{time_col}:T",
-                                title="Snapshot",
-                            ),
-                            y=alt.Y(
-                                "Value:Q",
-                                stack="zero",
-                                title=y_label,
-                            ),
-                            color=alt.Color(
-                                "Technology:N",
-                                title="Technology",
-                                scale=alt.Scale(
-                                    domain=shown_techs,
-                                    range=[DISPATCH_COLORS[t] for t in shown_techs],
-                                ),
-                            ),
-                            tooltip=[
-                                alt.Tooltip(
-                                    f"{time_col}:T",
-                                    title="Snapshot",
-                                ),
-                                alt.Tooltip("Technology:N"),
-                                alt.Tooltip(
-                                    "Value:Q",
-                                    format=",.2f",
-                                ),
-                            ],
-                        )
-                        .properties(height=600)
-                    )
-
-                    st.altair_chart(chart, width="stretch")
-
-                    annual_table = compute_dispatch_annual_totals(
-                        n_dispatch,
-                        dispatch_df,
-                        dispatch_category,
-                    )
-
-                    with st.expander(
-                        f"Show {dispatch_category} annual totals for scenario {dispatch_label}",
-                        expanded=False,
-                    ):
-                        st.dataframe(
-                            annual_table,
-                            width="stretch",
-                            hide_index=True,
-                        )
-
-            # COMMODITY COST MAPS
-
-            elif result_view == "Commodity cost maps":
-                cost_map = st.radio(
-                    "Select cost map",
+                st.write("")
+                result_view = st.radio(
+                    "Select result view",
                     [
-                        "electricity (LCOE)",
-                        "e-hydrogen (LCOH)",
-                        "e-ammonia (LCOA)",
-                        "e-methanol (LCOM)",
+                        "Commodity cost maps",
+                        "Installed capacity",
+                        "Dispatch",
+                        "System costs",
+                        # "Technical comparison",
+                        "Economic comparison",
                     ],
                     horizontal=True,
                 )
 
-                APP_DIR = Path(__file__).resolve().parent
+                if selected_runs:
+                    selected_networks = {
+                        label_map.get(run, run): st.session_state.solved_networks[run]
+                        for run in selected_runs
+                    }
 
-                shape_path = APP_DIR / "data" / "shapes" / "australia_states.geojson"
+                    st.subheader(result_view)
 
-                try:
-                    states = gpd.read_file(shape_path)
+                    # INSTALLED CAPACITY
 
-                    state_maps = []
-
-                    for cost_run in selected_runs:
-                        cost_label = label_map.get(cost_run, cost_run)
-                        n_cost = st.session_state.solved_networks[cost_run]
-
-                        if cost_map == "electricity (LCOE)":
-                            cost_df, _ = compute_lcoe_by_bus(n_cost)
-                            cost_col = "weighted_lcoe"
-                            weight_col = "dispatch_twh"
-                            output_col = "state_weighted_lcoe"
-                            cbar_label = "Generation-weighted LCOE (AUD/MWh)"
-                            empty_msg = f"No LCOE data found for scenario {cost_label}."
-                            table_title = (
-                                f"Show state-level LCOE table for scenario {cost_label}"
-                            )
-                            rename_cols = {
-                                "STATE_NAME": "State",
-                                output_col: "Generation-weighted LCOE (AUD/MWh)",
-                                weight_col: "Dispatch (TWh)",
-                            }
-
-                        elif cost_map == "e-hydrogen (LCOH)":
-                            cost_df, _ = compute_lcoh_by_bus(n_cost)
-                            cost_col = "weighted_lcoh_aud_per_kg"
-                            weight_col = "h2_dispatch_kt"
-                            output_col = "state_weighted_lcoh_aud_per_kg"
-                            cbar_label = "Production-weighted LCOH (AUD/kg H2)"
-                            empty_msg = f"No grid H2 production found for scenario {cost_label}."
-                            table_title = (
-                                f"Show state-level LCOH table for scenario {cost_label}"
-                            )
-                            rename_cols = {
-                                "STATE_NAME": "State",
-                                output_col: "Production-weighted LCOH (AUD/kg H2)",
-                                weight_col: "Grid H2 production (kt H2)",
-                            }
-
-                        elif cost_map == "e-ammonia (LCOA)":
-                            cost_df, _ = compute_lco_ammonia_by_bus(n_cost)
-                            cost_col = "weighted_lco_ammonia_aud_per_tonne"
-                            weight_col = "production_kt"
-                            output_col = "state_weighted_lco_ammonia_aud_per_tonne"
-                            cbar_label = "Production-weighted LCO ammonia (AUD/t NH3)"
-                            empty_msg = f"No e-ammonia production found for scenario {cost_label}."
-                            table_title = f"Show state-level e-ammonia cost table for scenario {cost_label}"
-                            rename_cols = {
-                                "STATE_NAME": "State",
-                                output_col: "Production-weighted LCO ammonia (AUD/t NH3)",
-                                weight_col: "e-ammonia production (kt NH3)",
-                            }
-
-                        elif cost_map == "e-methanol (LCOM)":
-                            cost_df, _ = compute_lco_methanol_by_bus(n_cost)
-                            cost_col = "weighted_lco_methanol_aud_per_tonne"
-                            weight_col = "production_kt"
-                            output_col = "state_weighted_lco_methanol_aud_per_tonne"
-                            cbar_label = "Production-weighted LCOMeOH (AUD/t MeOH)"
-                            empty_msg = f"No e-methanol production found for scenario {cost_label}."
-                            table_title = f"Show state-level e-methanol cost table for scenario {cost_label}"
-                            rename_cols = {
-                                "STATE_NAME": "State",
-                                output_col: "Production-weighted LCOMeOH (AUD/t MeOH)",
-                                weight_col: "e-methanol production (kt MeOH)",
-                            }
-
-                        if cost_df.empty:
-                            state_maps.append((cost_label, None, empty_msg, None, None))
-                            continue
-
-                        state_costs = aggregate_node_costs_by_state(
-                            node_df=cost_df,
-                            states=states,
-                            cost_col=cost_col,
-                            weight_col=weight_col,
-                            output_cost_col=output_col,
+                    if result_view == "Installed capacity":
+                        category = st.radio(
+                            "Select result category",
+                            get_available_result_categories(),
+                            horizontal=True,
                         )
 
-                        state_maps.append(
-                            (
+                        if category == "Electricity":
+                            cap_df = compute_capacity_by_carrier(
+                                selected_networks,
+                                category,
+                            )
+                            y_label = "GW"
+                            result_title = "Electricity - Installed capacity"
+
+                        elif category == "CO2 capture":
+                            cap_df = compute_annual_flow_by_carrier(
+                                selected_networks,
+                                category,
+                                MWH_PER_TONNE,
+                            )
+                            y_label = "Mtpa"
+                            result_title = "CO2 capture - Annual capture"
+
+                        else:
+                            cap_df = compute_annual_flow_by_carrier(
+                                selected_networks,
+                                category,
+                                MWH_PER_TONNE,
+                            )
+                            y_label = "Mtpa"
+                            result_title = f"{category} - Annual production capacity"
+
+                        st.subheader(result_title)
+
+                        if cap_df.empty:
+                            st.warning(f"No result data found for {category}.")
+
+                        else:
+                            chart_df = cap_df.pivot_table(
+                                index="scenario",
+                                columns="carrier",
+                                values="value",
+                                aggfunc="sum",
+                                fill_value=0.0,
+                            )
+
+                            plot_df = chart_df.reset_index().melt(
+                                id_vars="scenario",
+                                var_name="Technology",
+                                value_name="Value",
+                            )
+
+                            tech_totals = plot_df.groupby("Technology")["Value"].sum()
+
+                            shown_techs = [
+                                tech
+                                for tech in DISPATCH_COLORS
+                                if tech in tech_totals.index and tech_totals[tech] > 0
+                            ]
+
+                            chart = (
+                                alt.Chart(plot_df)
+                                .mark_bar()
+                                .encode(
+                                    x=alt.X(
+                                        "scenario:N",
+                                        title="Scenario",
+                                        axis=alt.Axis(labelAngle=0),
+                                    ),
+                                    y=alt.Y(
+                                        "Value:Q",
+                                        stack="zero",
+                                        title=y_label,
+                                    ),
+                                    color=alt.Color(
+                                        "Technology:N",
+                                        title="Technology",
+                                        scale=alt.Scale(
+                                            domain=shown_techs,
+                                            range=[DISPATCH_COLORS[t] for t in shown_techs],
+                                        ),
+                                    ),
+                                    tooltip=[
+                                        alt.Tooltip("scenario:N"),
+                                        alt.Tooltip("Technology:N"),
+                                        alt.Tooltip(
+                                            "Value:Q",
+                                            format=",.2f",
+                                        ),
+                                    ],
+                                )
+                                .properties(height=600)
+                            )
+
+                            st.altair_chart(chart, width="stretch")
+
+                            APP_DIR = Path(__file__).resolve().parent
+
+                            shape_path = (
+                                APP_DIR / "data" / "shapes" / "australia_states.geojson"
+                            )
+
+                            try:
+                                shapes = gpd.read_file(shape_path)
+
+                                map_unit = "GW" if category == "Electricity" else "Mtpa"
+
+                                for capacity_run in selected_runs:
+                                    capacity_label = label_map.get(
+                                        capacity_run,
+                                        capacity_run,
+                                    )
+
+                                    st.markdown(f"### Scenario {capacity_label}")
+
+                                    capacity_by_bus = compute_capacity_by_bus(
+                                        st.session_state.solved_networks[capacity_run],
+                                        category,
+                                    )
+
+                                    if capacity_by_bus.empty:
+                                        st.warning(
+                                            f"No mapped capacity data found for scenario {capacity_label}."
+                                        )
+                                        continue
+
+                                    n_map = st.session_state.solved_networks[capacity_run]
+
+                                    map_network = None
+
+                                    if category == "Electricity":
+                                        map_network = n_map
+
+                                    fig = plot_capacity_map_by_bus(
+                                        capacity_by_bus,
+                                        shapes,
+                                        DISPATCH_COLORS,
+                                        network=map_network,
+                                        unit=map_unit,
+                                    )
+
+                                    st.pyplot(fig, width="content")
+
+                            except Exception as exc:
+                                st.error(f"Could not build capacity map: {exc}")
+
+                            table_df = (
+                                cap_df.drop(
+                                    columns=["component"],
+                                    errors="ignore",
+                                )
+                                .pivot_table(
+                                    index=["carrier", "unit"],
+                                    columns="scenario",
+                                    values="value",
+                                    aggfunc="sum",
+                                    fill_value=0.0,
+                                )
+                                .reset_index()
+                                .rename(
+                                    columns={
+                                        "carrier": "Carrier",
+                                        "unit": "Unit",
+                                    }
+                                )
+                            )
+
+                            with st.expander(
+                                f"Show {category} data table",
+                                expanded=False,
+                            ):
+                                st.dataframe(
+                                    table_df,
+                                    width="stretch",
+                                    hide_index=True,
+                                )
+
+                    # DISPATCH
+
+                    elif result_view == "Dispatch":
+                        dispatch_category = st.radio(
+                            "Select dispatch category",
+                            get_available_dispatch_categories(),
+                            horizontal=True,
+                        )
+
+                        dispatch_scope = st.radio(
+                            "Select dispatch aggregation",
+                            ["National", "By state"],
+                            horizontal=True,
+                        )
+
+                        resample_options = [
+                            "Original",
+                            "Daily mean",
+                            "Weekly mean",
+                        ]
+
+                        APP_DIR = Path(__file__).resolve().parent
+                        shape_path = APP_DIR / "data" / "shapes" / "australia_states.geojson"
+
+                        states = None
+                        selected_state = None
+
+                        if dispatch_scope == "By state":
+                            try:
+                                states = gpd.read_file(shape_path)
+                                state_dispatch_all = compute_dispatch_by_carrier_and_state(
+                                    st.session_state.solved_networks[selected_runs[0]],
+                                    dispatch_category,
+                                    states,
+                                )
+
+                                available_states = sorted(
+                                    state_dispatch_all["state"].dropna().unique()
+                                )
+
+                                selected_state = st.selectbox(
+                                    "Select state",
+                                    available_states,
+                                )
+                            except Exception as exc:
+                                st.error(f"Could not load state shapes: {exc}")
+                                st.stop()
+
+                        for dispatch_run in selected_runs:
+                            dispatch_label = label_map.get(
+                                dispatch_run,
+                                dispatch_run,
+                            )
+
+                            n_dispatch = st.session_state.solved_networks[dispatch_run]
+
+                            if dispatch_scope == "National":
+                                dispatch_df = compute_dispatch_by_carrier(
+                                    n_dispatch,
+                                    dispatch_category,
+                                )
+
+                            else:
+                                state_dispatch = compute_dispatch_by_carrier_and_state(
+                                    n_dispatch,
+                                    dispatch_category,
+                                    states,
+                                )
+
+                                if state_dispatch.empty:
+                                    dispatch_df = pd.DataFrame()
+
+                                else:
+                                    dispatch_df = (
+                                        state_dispatch[
+                                            state_dispatch["state"] == selected_state
+                                        ]
+                                        .drop(columns=["state"])
+                                        .set_index("snapshot")
+                                    )
+
+                                    dispatch_df.index = pd.to_datetime(dispatch_df.index)
+
+                            n_snapshots = len(dispatch_df)
+
+                            if n_snapshots <= 100:
+                                default_index = 0
+                            elif n_snapshots <= 500:
+                                default_index = 1
+                            else:
+                                default_index = 2
+
+                            dispatch_resample = st.selectbox(
+                                f"Resample dispatch visualization for scenario {dispatch_label}",
+                                resample_options,
+                                index=default_index,
+                                key=f"dispatch_resample_{dispatch_label}_{dispatch_category}_{dispatch_scope}_{selected_state}",
+                            )
+
+                            y_label = "GW" if dispatch_category == "Electricity" else "kt"
+
+                            if dispatch_scope == "National":
+                                st.markdown(f"### Scenario {dispatch_label}")
+                            else:
+                                st.markdown(f"### Scenario {dispatch_label} - {selected_state}")
+
+                            if dispatch_df.empty:
+                                st.warning(
+                                    f"No dispatch data found for {dispatch_category}"
+                                    + (
+                                        f" in {selected_state}."
+                                        if dispatch_scope == "By state"
+                                        else "."
+                                    )
+                                )
+                                continue
+
+                            plot_dispatch_df = dispatch_df.copy()
+
+                            if dispatch_resample == "Daily mean":
+                                plot_dispatch_df = plot_dispatch_df.resample("D").mean()
+
+                            elif dispatch_resample == "Weekly mean":
+                                plot_dispatch_df = plot_dispatch_df.resample("W").mean()
+
+                            plot_df = plot_dispatch_df.reset_index().melt(
+                                id_vars=(plot_dispatch_df.index.name or "index"),
+                                var_name="Technology",
+                                value_name="Value",
+                            )
+
+                            time_col = plot_dispatch_df.index.name or "index"
+
+                            tech_totals = plot_df.groupby("Technology")["Value"].sum()
+
+                            shown_techs = [
+                                tech
+                                for tech in DISPATCH_COLORS
+                                if tech in tech_totals.index and tech_totals[tech] > 0
+                            ]
+
+                            chart = (
+                                alt.Chart(plot_df)
+                                .mark_area()
+                                .encode(
+                                    x=alt.X(
+                                        f"{time_col}:T",
+                                        title="Snapshot",
+                                    ),
+                                    y=alt.Y(
+                                        "Value:Q",
+                                        stack="zero",
+                                        title=y_label,
+                                    ),
+                                    color=alt.Color(
+                                        "Technology:N",
+                                        title="Technology",
+                                        scale=alt.Scale(
+                                            domain=shown_techs,
+                                            range=[DISPATCH_COLORS[t] for t in shown_techs],
+                                        ),
+                                    ),
+                                    tooltip=[
+                                        alt.Tooltip(
+                                            f"{time_col}:T",
+                                            title="Snapshot",
+                                        ),
+                                        alt.Tooltip("Technology:N"),
+                                        alt.Tooltip(
+                                            "Value:Q",
+                                            format=",.2f",
+                                        ),
+                                    ],
+                                )
+                                .properties(height=600)
+                            )
+
+                            st.altair_chart(chart, width="stretch")
+
+                            annual_table = compute_dispatch_annual_totals(
+                                n_dispatch,
+                                dispatch_df,
+                                dispatch_category,
+                            )
+
+                            with st.expander(
+                                f"Show {dispatch_category} annual totals for scenario {dispatch_label}",
+                                expanded=False,
+                            ):
+                                st.dataframe(
+                                    annual_table,
+                                    width="stretch",
+                                    hide_index=True,
+                                )
+
+                    # COMMODITY COST MAPS
+
+                    elif result_view == "Commodity cost maps":
+                        cost_map = st.radio(
+                            "Select cost map",
+                            [
+                                "electricity (LCOE)",
+                                "e-hydrogen (LCOH)",
+                                "e-ammonia (LCOA)",
+                                "e-methanol (LCOM)",
+                            ],
+                            horizontal=True,
+                        )
+
+                        APP_DIR = Path(__file__).resolve().parent
+
+                        shape_path = APP_DIR / "data" / "shapes" / "australia_states.geojson"
+
+                        try:
+                            states = gpd.read_file(shape_path)
+
+                            state_maps = []
+
+                            for cost_run in selected_runs:
+                                cost_label = label_map.get(cost_run, cost_run)
+                                n_cost = st.session_state.solved_networks[cost_run]
+
+                                if cost_map == "electricity (LCOE)":
+                                    cost_df, _ = compute_lcoe_by_bus(n_cost)
+                                    cost_col = "weighted_lcoe"
+                                    weight_col = "dispatch_twh"
+                                    output_col = "state_weighted_lcoe"
+                                    cbar_label = "Generation-weighted LCOE (AUD/MWh)"
+                                    empty_msg = f"No LCOE data found for scenario {cost_label}."
+                                    table_title = (
+                                        f"Show state-level LCOE table for scenario {cost_label}"
+                                    )
+                                    rename_cols = {
+                                        "STATE_NAME": "State",
+                                        output_col: "Generation-weighted LCOE (AUD/MWh)",
+                                        weight_col: "Dispatch (TWh)",
+                                    }
+
+                                elif cost_map == "e-hydrogen (LCOH)":
+                                    cost_df, _ = compute_lcoh_by_bus(n_cost)
+                                    cost_col = "weighted_lcoh_aud_per_kg"
+                                    weight_col = "h2_dispatch_kt"
+                                    output_col = "state_weighted_lcoh_aud_per_kg"
+                                    cbar_label = "Production-weighted LCOH (AUD/kg H2)"
+                                    empty_msg = f"No grid H2 production found for scenario {cost_label}."
+                                    table_title = (
+                                        f"Show state-level LCOH table for scenario {cost_label}"
+                                    )
+                                    rename_cols = {
+                                        "STATE_NAME": "State",
+                                        output_col: "Production-weighted LCOH (AUD/kg H2)",
+                                        weight_col: "Grid H2 production (kt H2)",
+                                    }
+
+                                elif cost_map == "e-ammonia (LCOA)":
+                                    cost_df, _ = compute_lco_ammonia_by_bus(n_cost)
+                                    cost_col = "weighted_lco_ammonia_aud_per_tonne"
+                                    weight_col = "production_kt"
+                                    output_col = "state_weighted_lco_ammonia_aud_per_tonne"
+                                    cbar_label = "Production-weighted LCO ammonia (AUD/t NH3)"
+                                    empty_msg = f"No e-ammonia production found for scenario {cost_label}."
+                                    table_title = f"Show state-level e-ammonia cost table for scenario {cost_label}"
+                                    rename_cols = {
+                                        "STATE_NAME": "State",
+                                        output_col: "Production-weighted LCO ammonia (AUD/t NH3)",
+                                        weight_col: "e-ammonia production (kt NH3)",
+                                    }
+
+                                elif cost_map == "e-methanol (LCOM)":
+                                    cost_df, _ = compute_lco_methanol_by_bus(n_cost)
+                                    cost_col = "weighted_lco_methanol_aud_per_tonne"
+                                    weight_col = "production_kt"
+                                    output_col = "state_weighted_lco_methanol_aud_per_tonne"
+                                    cbar_label = "Production-weighted LCOMeOH (AUD/t MeOH)"
+                                    empty_msg = f"No e-methanol production found for scenario {cost_label}."
+                                    table_title = f"Show state-level e-methanol cost table for scenario {cost_label}"
+                                    rename_cols = {
+                                        "STATE_NAME": "State",
+                                        output_col: "Production-weighted LCOMeOH (AUD/t MeOH)",
+                                        weight_col: "e-methanol production (kt MeOH)",
+                                    }
+
+                                if cost_df.empty:
+                                    state_maps.append((cost_label, None, empty_msg, None, None))
+                                    continue
+
+                                state_costs = aggregate_node_costs_by_state(
+                                    node_df=cost_df,
+                                    states=states,
+                                    cost_col=cost_col,
+                                    weight_col=weight_col,
+                                    output_cost_col=output_col,
+                                )
+
+                                state_maps.append(
+                                    (
+                                        cost_label,
+                                        state_costs,
+                                        empty_msg,
+                                        table_title,
+                                        rename_cols,
+                                    )
+                                )
+
+                            valid_state_maps = [
+                                state_costs
+                                for _, state_costs, _, _, _ in state_maps
+                                if state_costs is not None
+                                and output_col in state_costs.columns
+                                and not state_costs[output_col].dropna().empty
+                            ]
+
+                            if not valid_state_maps:
+                                st.warning(
+                                    "No valid cost data available for the selected scenarios."
+                                )
+                                st.stop()
+
+                            all_values = pd.concat(
+                                [
+                                    state_costs[output_col].dropna()
+                                    for state_costs in valid_state_maps
+                                ],
+                                ignore_index=True,
+                            )
+
+                            vmin = all_values.quantile(0.05)
+                            vmax = all_values.quantile(0.95)
+
+                            for (
                                 cost_label,
                                 state_costs,
                                 empty_msg,
                                 table_title,
                                 rename_cols,
+                            ) in state_maps:
+                                st.markdown(f"### Scenario {cost_label}")
+
+                                if state_costs is None:
+                                    st.warning(empty_msg)
+                                    continue
+
+                                fig = plot_state_cost_map(
+                                    state_costs=state_costs,
+                                    value_col=output_col,
+                                    colorbar_label=cbar_label,
+                                    vmin=vmin,
+                                    vmax=vmax,
+                                )
+
+                                st.pyplot(fig, width="content")
+
+                                table_cols = ["STATE_NAME", output_col, weight_col]
+
+                                with st.expander(
+                                    table_title,
+                                    expanded=False,
+                                ):
+                                    st.dataframe(
+                                        state_costs[table_cols]
+                                        .dropna(subset=[output_col])
+                                        .round(2)
+                                        .rename(columns=rename_cols),
+                                        hide_index=True,
+                                        width="stretch",
+                                    )
+
+                        except Exception as exc:
+                            st.error(f"Could not build cost map: {exc}")
+
+                    # SYSTEM COSTS
+
+                    elif result_view == "System costs":
+                        system_cost_type = st.radio(
+                            "Select system cost type",
+                            [
+                                "Capital expenditure",
+                                "Operational expenditure",
+                            ],
+                            horizontal=True,
+                        )
+
+                        df_system = build_system_cost_table(selected_networks)
+
+                        df_plot = (
+                            df_system[df_system["cost_type"] == system_cost_type]
+                            .groupby(
+                                ["scenario", "tech_label"],
+                                as_index=False,
+                            )["cost_billion"]
+                            .sum()
+                        )
+
+                        active_categories = (
+                            df_plot.groupby("tech_label")["cost_billion"]
+                            .sum()
+                            .loc[lambda s: s.abs() > 1e-6]
+                            .index
+                        )
+
+                        categories = [c for c in renamed_tech_colors if c in active_categories]
+
+                        df_plot = df_plot[df_plot["tech_label"].isin(categories)]
+
+                        chart = (
+                            alt.Chart(df_plot)
+                            .mark_bar()
+                            .encode(
+                                x=alt.X(
+                                    "scenario:N",
+                                    title="Scenario",
+                                    axis=alt.Axis(labelAngle=0),
+                                ),
+                                y=alt.Y(
+                                    "cost_billion:Q",
+                                    title="Annual system cost (Billion AUD/year)",
+                                    stack="zero",
+                                ),
+                                color=alt.Color(
+                                    "tech_label:N",
+                                    title="Technology",
+                                    scale=alt.Scale(
+                                        domain=categories,
+                                        range=[renamed_tech_colors[c] for c in categories],
+                                    ),
+                                ),
+                                tooltip=[
+                                    "scenario",
+                                    "tech_label",
+                                    alt.Tooltip(
+                                        "cost_billion:Q",
+                                        format=",.2f",
+                                    ),
+                                ],
+                            )
+                            .properties(height=600)
+                        )
+
+                        st.altair_chart(chart, width="stretch")
+
+                        summary_table = (
+                            df_system[df_system["cost_type"] == system_cost_type]
+                            .pivot_table(
+                                index=["macro_category", "tech_label"],
+                                columns="scenario",
+                                values="cost_billion",
+                                aggfunc="sum",
+                                fill_value=0.0,
+                            )
+                            .reset_index()
+                            .rename(
+                                columns={
+                                    "macro_category": "Macro category",
+                                    "tech_label": "Technology",
+                                }
                             )
                         )
 
-                    valid_state_maps = [
-                        state_costs
-                        for _, state_costs, _, _, _ in state_maps
-                        if state_costs is not None
-                        and output_col in state_costs.columns
-                        and not state_costs[output_col].dropna().empty
-                    ]
+                        scenario_cols = [
+                            c
+                            for c in summary_table.columns
+                            if c not in ["Macro category", "Technology"]
+                        ]
 
-                    if not valid_state_maps:
-                        st.warning(
-                            "No valid cost data available for the selected scenarios."
-                        )
-                        st.stop()
-
-                    all_values = pd.concat(
-                        [
-                            state_costs[output_col].dropna()
-                            for state_costs in valid_state_maps
-                        ],
-                        ignore_index=True,
-                    )
-
-                    vmin = all_values.quantile(0.05)
-                    vmax = all_values.quantile(0.95)
-
-                    for (
-                        cost_label,
-                        state_costs,
-                        empty_msg,
-                        table_title,
-                        rename_cols,
-                    ) in state_maps:
-                        st.markdown(f"### Scenario {cost_label}")
-
-                        if state_costs is None:
-                            st.warning(empty_msg)
-                            continue
-
-                        fig = plot_state_cost_map(
-                            state_costs=state_costs,
-                            value_col=output_col,
-                            colorbar_label=cbar_label,
-                            vmin=vmin,
-                            vmax=vmax,
-                        )
-
-                        st.pyplot(fig, width="content")
-
-                        table_cols = ["STATE_NAME", output_col, weight_col]
+                        summary_table = summary_table[
+                            (summary_table[scenario_cols].abs().sum(axis=1) > 0)
+                        ]
 
                         with st.expander(
-                            table_title,
+                            f"Show {system_cost_type.lower()} summary table",
                             expanded=False,
                         ):
                             st.dataframe(
-                                state_costs[table_cols]
-                                .dropna(subset=[output_col])
-                                .round(2)
-                                .rename(columns=rename_cols),
+                                summary_table.round(3),
                                 hide_index=True,
                                 width="stretch",
                             )
 
-                except Exception as exc:
-                    st.error(f"Could not build cost map: {exc}")
+                        detailed_table = (
+                            df_system[df_system["cost_type"] == system_cost_type]
+                            .pivot_table(
+                                index=[
+                                    "macro_category",
+                                    "tech_label",
+                                    "raw_technology",
+                                ],
+                                columns="scenario",
+                                values="cost_billion",
+                                aggfunc="sum",
+                                fill_value=0.0,
+                            )
+                            .reset_index()
+                            .rename(
+                                columns={
+                                    "macro_category": "Macro category",
+                                    "tech_label": "Category",
+                                    "raw_technology": "Technology",
+                                }
+                            )
+                        )
 
-            # SYSTEM COSTS
+                        scenario_cols = [
+                            c
+                            for c in detailed_table.columns
+                            if c not in ["Macro category", "Category", "Technology"]
+                        ]
 
-            elif result_view == "System costs":
-                system_cost_type = st.radio(
-                    "Select system cost type",
-                    [
-                        "Capital expenditure",
-                        "Operational expenditure",
-                    ],
-                    horizontal=True,
+                        detailed_table = detailed_table[
+                            (detailed_table[scenario_cols].abs().sum(axis=1) > 0)
+                        ]
+
+                        with st.expander(
+                            f"Show detailed {system_cost_type.lower()} table",
+                            expanded=False,
+                        ):
+                            st.dataframe(
+                                detailed_table.round(3),
+                                hide_index=True,
+                                width="stretch",
+                            )
+
+                # ECONOMIC COMPARISON
+
+                if result_view == "Economic comparison":
+                    if st.session_state.results is None:
+                        st.info("Run an optimization first to show the economic comparison.")
+                        st.stop()
+
+                    df = st.session_state.results
+                    df = df.rename(columns=label_map)
+                    df = df / 1e3
+
+                    df = df[df.index.get_level_values(0).str.contains("Economics")].round(1)
+
+                    df = df.reset_index().drop(columns=["component"]).set_index("carrier")
+
+                    st.bar_chart(
+                        df.T,
+                        x_label="Scenario",
+                        y_label="Annual Cost (Million AUD)",
+                        horizontal=True,
+                    )
+
+            else:
+                st.info(
+                    "Please load a network via the left sidebar and run an optimization to see results here ..."
                 )
 
-                df_system = build_system_cost_table(selected_networks)
-
-                df_plot = (
-                    df_system[df_system["cost_type"] == system_cost_type]
-                    .groupby(
-                        ["scenario", "tech_label"],
-                        as_index=False,
-                    )["cost_billion"]
-                    .sum()
-                )
-
-                active_categories = (
-                    df_plot.groupby("tech_label")["cost_billion"]
-                    .sum()
-                    .loc[lambda s: s.abs() > 1e-6]
-                    .index
-                )
-
-                categories = [c for c in renamed_tech_colors if c in active_categories]
-
-                df_plot = df_plot[df_plot["tech_label"].isin(categories)]
-
-                chart = (
-                    alt.Chart(df_plot)
-                    .mark_bar()
-                    .encode(
-                        x=alt.X(
-                            "scenario:N",
-                            title="Scenario",
-                            axis=alt.Axis(labelAngle=0),
-                        ),
-                        y=alt.Y(
-                            "cost_billion:Q",
-                            title="Annual system cost (Billion AUD/year)",
-                            stack="zero",
-                        ),
-                        color=alt.Color(
-                            "tech_label:N",
-                            title="Technology",
-                            scale=alt.Scale(
-                                domain=categories,
-                                range=[renamed_tech_colors[c] for c in categories],
-                            ),
-                        ),
-                        tooltip=[
-                            "scenario",
-                            "tech_label",
-                            alt.Tooltip(
-                                "cost_billion:Q",
-                                format=",.2f",
-                            ),
-                        ],
-                    )
-                    .properties(height=600)
-                )
-
-                st.altair_chart(chart, width="stretch")
-
-                summary_table = (
-                    df_system[df_system["cost_type"] == system_cost_type]
-                    .pivot_table(
-                        index=["macro_category", "tech_label"],
-                        columns="scenario",
-                        values="cost_billion",
-                        aggfunc="sum",
-                        fill_value=0.0,
-                    )
-                    .reset_index()
-                    .rename(
-                        columns={
-                            "macro_category": "Macro category",
-                            "tech_label": "Technology",
-                        }
-                    )
-                )
-
-                scenario_cols = [
-                    c
-                    for c in summary_table.columns
-                    if c not in ["Macro category", "Technology"]
-                ]
-
-                summary_table = summary_table[
-                    (summary_table[scenario_cols].abs().sum(axis=1) > 0)
-                ]
-
-                with st.expander(
-                    f"Show {system_cost_type.lower()} summary table",
-                    expanded=False,
-                ):
-                    st.dataframe(
-                        summary_table.round(3),
-                        hide_index=True,
-                        width="stretch",
-                    )
-
-                detailed_table = (
-                    df_system[df_system["cost_type"] == system_cost_type]
-                    .pivot_table(
-                        index=[
-                            "macro_category",
-                            "tech_label",
-                            "raw_technology",
-                        ],
-                        columns="scenario",
-                        values="cost_billion",
-                        aggfunc="sum",
-                        fill_value=0.0,
-                    )
-                    .reset_index()
-                    .rename(
-                        columns={
-                            "macro_category": "Macro category",
-                            "tech_label": "Category",
-                            "raw_technology": "Technology",
-                        }
-                    )
-                )
-
-                scenario_cols = [
-                    c
-                    for c in detailed_table.columns
-                    if c not in ["Macro category", "Category", "Technology"]
-                ]
-
-                detailed_table = detailed_table[
-                    (detailed_table[scenario_cols].abs().sum(axis=1) > 0)
-                ]
-
-                with st.expander(
-                    f"Show detailed {system_cost_type.lower()} table",
-                    expanded=False,
-                ):
-                    st.dataframe(
-                        detailed_table.round(3),
-                        hide_index=True,
-                        width="stretch",
-                    )
-
-        # ECONOMIC COMPARISON
-
-        if result_view == "Economic comparison":
-            if st.session_state.results is None:
-                st.info("Run an optimization first to show the economic comparison.")
-                st.stop()
-
-            df = st.session_state.results
-            df = df.rename(columns=label_map)
-            df = df / 1e3
-
-            df = df[df.index.get_level_values(0).str.contains("Economics")].round(1)
-
-            df = df.reset_index().drop(columns=["component"]).set_index("carrier")
-
-            st.bar_chart(
-                df.T,
-                x_label="Scenario",
-                y_label="Annual Cost (Million AUD)",
-                horizontal=True,
-            )
+                st.write("""
+                    After running an optimization, you will see a detailed breakdown of the expanded capacities and economic outcomes for each technology, allowing you to assess the impact of your parameter adjustments on the network's performance and costs.
+                    """)
 
     else:
         st.info(
@@ -2553,7 +2564,7 @@ with t_insurance:
     """)
 
     try:
-        with st.spinner("Downloading precomputed insurance scenarios..."):
+        with st.spinner("Downloading precomputed insurance scenarios (depending on your internet speed this might take some minutes)..."):
             insurance_networks = load_precomputed_insurance_scenarios(nodes)
 
     except Exception as exc:
