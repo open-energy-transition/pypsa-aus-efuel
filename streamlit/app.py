@@ -2643,12 +2643,92 @@ with t_insurance:
     diesel_rows = []
     ammonia_rows = []
     scenario_detail_rows = []
+    renewable_capacity_rows = []
+    generation_rows = []
 
     for scenario_label, scenario_network in insurance_networks.items():
         scenario_cost = scenario_network.objective / 1e6
 
         e_meoh = get_network_demand_mtpa(scenario_network, "e_methanol")
         e_nh3 = get_network_demand_mtpa(scenario_network, "e_ammonia")
+
+        renewable_generators = scenario_network.generators[
+            scenario_network.generators.carrier.isin(
+                ["solar", "solar rooftop", "onwind", "offwind-ac", "offwind-dc"]
+            )
+        ]
+
+        renewable_capacity_rows.append(
+            {
+                "Scenario": scenario_display_labels[scenario_label],
+                "Solar utility (GW)": (
+                    renewable_generators[renewable_generators.carrier == "solar"][
+                        "p_nom_opt"
+                    ].sum()
+                    / 1000
+                ),
+                "Solar rooftop (GW)": (
+                    renewable_generators[
+                        renewable_generators.carrier == "solar rooftop"
+                    ]["p_nom_opt"].sum()
+                    / 1000
+                ),
+                "Onshore wind (GW)": (
+                    renewable_generators[renewable_generators.carrier == "onwind"][
+                        "p_nom_opt"
+                    ].sum()
+                    / 1000
+                ),
+                "Offshore wind AC (GW)": (
+                    renewable_generators[renewable_generators.carrier == "offwind-ac"][
+                        "p_nom_opt"
+                    ].sum()
+                    / 1000
+                ),
+                "Offshore wind DC (GW)": (
+                    renewable_generators[renewable_generators.carrier == "offwind-dc"][
+                        "p_nom_opt"
+                    ].sum()
+                    / 1000
+                ),
+                "Total renewable capacity (GW)": (
+                    renewable_generators["p_nom_opt"].sum() / 1000
+                ),
+            }
+        )
+
+        dispatch_df = compute_dispatch_by_carrier(
+            scenario_network,
+            "Electricity",
+        )
+
+        annual_generation_twh = (
+            dispatch_df.multiply(
+                scenario_network.snapshot_weightings.generators, axis=0
+            ).sum()
+            / 1e3
+        )
+
+        generation_rows.append(
+            {
+                "Scenario": scenario_display_labels[scenario_label],
+                "Coal generation (TWh/year)": annual_generation_twh.get("Coal", 0.0),
+                "Gas generation (TWh/year)": (
+                    annual_generation_twh.get("Gas OCGT", 0.0)
+                    + annual_generation_twh.get("Gas CCGT", 0.0)
+                ),
+                "Oil generation (TWh/year)": annual_generation_twh.get("Oil", 0.0),
+                "Solar generation (TWh/year)": (
+                    annual_generation_twh.get("Utility solar", 0.0)
+                    + annual_generation_twh.get("Rooftop solar", 0.0)
+                ),
+                "Wind generation (TWh/year)": (
+                    annual_generation_twh.get("Onshore wind", 0.0)
+                    + annual_generation_twh.get("Offshore wind AC", 0.0)
+                    + annual_generation_twh.get("Offshore wind DC", 0.0)
+                ),
+            }
+        )
 
         additional_system_cost = scenario_cost - baseline_cost
         additional_green_fuel = max(e_meoh - baseline_meoh, 0.0)
@@ -2725,6 +2805,8 @@ with t_insurance:
     diesel_df = pd.DataFrame(diesel_rows)
     ammonia_df = pd.DataFrame(ammonia_rows)
     scenario_detail_df = pd.DataFrame(scenario_detail_rows)
+    renewable_capacity_df = pd.DataFrame(renewable_capacity_rows)
+    generation_df = pd.DataFrame(generation_rows)
 
     scenario_detail_df["Insurance break-even (AUD/t diesel)"] = (
         scenario_detail_df["Additional system cost relative to baseline (MAUD/year)"]
@@ -2909,8 +2991,23 @@ with t_insurance:
         "Show underlying assumptions for each production scenario",
         expanded=False,
     ):
+        st.markdown("**Insurance assumptions**")
         st.dataframe(
             scenario_detail_df.round(2),
+            hide_index=True,
+            width="stretch",
+        )
+
+        st.markdown("**Installed renewable capacity by scenario**")
+        st.dataframe(
+            renewable_capacity_df.round(2),
+            hide_index=True,
+            width="stretch",
+        )
+
+        st.markdown("**Annual electricity generation by scenario**")
+        st.dataframe(
+            generation_df.round(2),
             hide_index=True,
             width="stretch",
         )
