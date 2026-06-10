@@ -141,6 +141,7 @@ KG_PER_LITER_DIESEL = 0.85
 BASE_DIESEL_PRICE_AUD_PER_LITER = 1.77
 BASE_AMMONIA_PRICE_AUD_PER_TONNE = 700
 T_PER_GJ_DIESEL = 42.8  # or MT per PJ
+DIESEL_EMISSION_FACTOR_TCO2_PER_TONNE = 3.16
 DEFAULT_E_SHARE = 0.50
 DEFAULT_E_SHARE_PRODUCTION = 0.30
 
@@ -2588,15 +2589,6 @@ with t_insurance:
 
     The analysis is based on a fixed set of precomputed **20-node PyPSA-AUS scenarios**, ranging from 0% to 100% local e-fuel production.
     """)
-    st.markdown(f"""
-        Scenarios included:
-        - 0% local e-fuel production
-        - 20% local e-fuel production
-        - 40% local e-fuel production
-        - 60% local e-fuel production
-        - 80% local e-fuel production
-        - 100% local e-fuel production
-        """)
 
     nodes = 20
 
@@ -2674,6 +2666,9 @@ with t_insurance:
                 "e-ammonia production (Mtpa)": e_nh3,
                 "Additional e-methanol relative to baseline (Mtpa)": additional_green_fuel,
                 "Additional diesel-equivalent fuel displacement relative to baseline (Mtpa)": additional_diesel_equivalent,
+                "Avoided emissions from diesel replacement (MtCO2/year)": (
+                    additional_diesel_equivalent * DIESEL_EMISSION_FACTOR_TCO2_PER_TONNE
+                ),
                 "Additional e-ammonia relative to baseline (Mtpa)": additional_nh3,
             }
         )
@@ -2728,6 +2723,34 @@ with t_insurance:
     diesel_df = pd.DataFrame(diesel_rows)
     ammonia_df = pd.DataFrame(ammonia_rows)
     scenario_detail_df = pd.DataFrame(scenario_detail_rows)
+
+    scenario_overview_df = scenario_detail_df[
+        [
+            "Scenario",
+            "Additional diesel-equivalent fuel displacement relative to baseline (Mtpa)",
+        ]
+    ].copy()
+
+    scenario_overview_df["Avoided emissions from diesel replacement (MtCO2/year)"] = (
+        scenario_overview_df[
+            "Additional diesel-equivalent fuel displacement relative to baseline (Mtpa)"
+        ]
+        * DIESEL_EMISSION_FACTOR_TCO2_PER_TONNE
+    )
+
+    scenario_overview_df = scenario_overview_df[
+        [
+            "Scenario",
+            "Avoided emissions from diesel replacement (MtCO2/year)",
+        ]
+    ]
+
+    st.markdown("**Scenarios included**")
+    st.dataframe(
+        scenario_overview_df.round(2),
+        hide_index=True,
+        width="stretch",
+    )
 
     def make_insurance_chart(df, x_col, x_title, x_min):
         return (
@@ -2847,6 +2870,7 @@ with t_insurance:
             "Additional system cost relative to baseline (MAUD/year)",
             "Additional diesel-equivalent fuel displacement relative to baseline (Mtpa)",
             "Additional e-ammonia relative to baseline (Mtpa)",
+            "Avoided emissions from diesel replacement (MtCO2/year)",
         ]
     ]
 
