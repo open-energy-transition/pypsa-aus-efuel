@@ -1877,7 +1877,9 @@ with t_results:
                                         title="Technology",
                                         scale=alt.Scale(
                                             domain=shown_techs,
-                                            range=[DISPATCH_COLORS[t] for t in shown_techs],
+                                            range=[
+                                                DISPATCH_COLORS[t] for t in shown_techs
+                                            ],
                                         ),
                                     ),
                                     tooltip=[
@@ -1924,7 +1926,9 @@ with t_results:
                                         )
                                         continue
 
-                                    n_map = st.session_state.solved_networks[capacity_run]
+                                    n_map = st.session_state.solved_networks[
+                                        capacity_run
+                                    ]
 
                                     map_network = None
 
@@ -1997,7 +2001,9 @@ with t_results:
                         ]
 
                         APP_DIR = Path(__file__).resolve().parent
-                        shape_path = APP_DIR / "data" / "shapes" / "australia_states.geojson"
+                        shape_path = (
+                            APP_DIR / "data" / "shapes" / "australia_states.geojson"
+                        )
 
                         states = None
                         selected_state = None
@@ -2005,10 +2011,14 @@ with t_results:
                         if dispatch_scope == "By state":
                             try:
                                 states = gpd.read_file(shape_path)
-                                state_dispatch_all = compute_dispatch_by_carrier_and_state(
-                                    st.session_state.solved_networks[selected_runs[0]],
-                                    dispatch_category,
-                                    states,
+                                state_dispatch_all = (
+                                    compute_dispatch_by_carrier_and_state(
+                                        st.session_state.solved_networks[
+                                            selected_runs[0]
+                                        ],
+                                        dispatch_category,
+                                        states,
+                                    )
                                 )
 
                                 available_states = sorted(
@@ -2056,7 +2066,9 @@ with t_results:
                                         .set_index("snapshot")
                                     )
 
-                                    dispatch_df.index = pd.to_datetime(dispatch_df.index)
+                                    dispatch_df.index = pd.to_datetime(
+                                        dispatch_df.index
+                                    )
 
                             n_snapshots = len(dispatch_df)
 
@@ -2074,12 +2086,16 @@ with t_results:
                                 key=f"dispatch_resample_{dispatch_label}_{dispatch_category}_{dispatch_scope}_{selected_state}",
                             )
 
-                            y_label = "GW" if dispatch_category == "Electricity" else "kt"
+                            y_label = (
+                                "GW" if dispatch_category == "Electricity" else "kt"
+                            )
 
                             if dispatch_scope == "National":
                                 st.markdown(f"### Scenario {dispatch_label}")
                             else:
-                                st.markdown(f"### Scenario {dispatch_label} - {selected_state}")
+                                st.markdown(
+                                    f"### Scenario {dispatch_label} - {selected_state}"
+                                )
 
                             if dispatch_df.empty:
                                 st.warning(
@@ -2134,7 +2150,9 @@ with t_results:
                                         title="Technology",
                                         scale=alt.Scale(
                                             domain=shown_techs,
-                                            range=[DISPATCH_COLORS[t] for t in shown_techs],
+                                            range=[
+                                                DISPATCH_COLORS[t] for t in shown_techs
+                                            ],
                                         ),
                                     ),
                                     tooltip=[
@@ -2186,7 +2204,9 @@ with t_results:
 
                         APP_DIR = Path(__file__).resolve().parent
 
-                        shape_path = APP_DIR / "data" / "shapes" / "australia_states.geojson"
+                        shape_path = (
+                            APP_DIR / "data" / "shapes" / "australia_states.geojson"
+                        )
 
                         try:
                             states = gpd.read_file(shape_path)
@@ -2203,10 +2223,10 @@ with t_results:
                                     weight_col = "dispatch_twh"
                                     output_col = "state_weighted_lcoe"
                                     cbar_label = "Generation-weighted LCOE (AUD/MWh)"
-                                    empty_msg = f"No LCOE data found for scenario {cost_label}."
-                                    table_title = (
-                                        f"Show state-level LCOE table for scenario {cost_label}"
+                                    empty_msg = (
+                                        f"No LCOE data found for scenario {cost_label}."
                                     )
+                                    table_title = f"Show state-level LCOE table for scenario {cost_label}"
                                     rename_cols = {
                                         "STATE_NAME": "State",
                                         output_col: "Generation-weighted LCOE (AUD/MWh)",
@@ -2220,9 +2240,7 @@ with t_results:
                                     output_col = "state_weighted_lcoh_aud_per_kg"
                                     cbar_label = "Production-weighted LCOH (AUD/kg H2)"
                                     empty_msg = f"No grid H2 production found for scenario {cost_label}."
-                                    table_title = (
-                                        f"Show state-level LCOH table for scenario {cost_label}"
-                                    )
+                                    table_title = f"Show state-level LCOH table for scenario {cost_label}"
                                     rename_cols = {
                                         "STATE_NAME": "State",
                                         output_col: "Production-weighted LCOH (AUD/kg H2)",
@@ -2233,8 +2251,12 @@ with t_results:
                                     cost_df, _ = compute_lco_ammonia_by_bus(n_cost)
                                     cost_col = "weighted_lco_ammonia_aud_per_tonne"
                                     weight_col = "production_kt"
-                                    output_col = "state_weighted_lco_ammonia_aud_per_tonne"
-                                    cbar_label = "Production-weighted LCO ammonia (AUD/t NH3)"
+                                    output_col = (
+                                        "state_weighted_lco_ammonia_aud_per_tonne"
+                                    )
+                                    cbar_label = (
+                                        "Production-weighted LCO ammonia (AUD/t NH3)"
+                                    )
                                     empty_msg = f"No e-ammonia production found for scenario {cost_label}."
                                     table_title = f"Show state-level e-ammonia cost table for scenario {cost_label}"
                                     rename_cols = {
@@ -2247,8 +2269,12 @@ with t_results:
                                     cost_df, _ = compute_lco_methanol_by_bus(n_cost)
                                     cost_col = "weighted_lco_methanol_aud_per_tonne"
                                     weight_col = "production_kt"
-                                    output_col = "state_weighted_lco_methanol_aud_per_tonne"
-                                    cbar_label = "Production-weighted LCOMeOH (AUD/t MeOH)"
+                                    output_col = (
+                                        "state_weighted_lco_methanol_aud_per_tonne"
+                                    )
+                                    cbar_label = (
+                                        "Production-weighted LCOMeOH (AUD/t MeOH)"
+                                    )
                                     empty_msg = f"No e-methanol production found for scenario {cost_label}."
                                     table_title = f"Show state-level e-methanol cost table for scenario {cost_label}"
                                     rename_cols = {
@@ -2258,7 +2284,9 @@ with t_results:
                                     }
 
                                 if cost_df.empty:
-                                    state_maps.append((cost_label, None, empty_msg, None, None))
+                                    state_maps.append(
+                                        (cost_label, None, empty_msg, None, None)
+                                    )
                                     continue
 
                                 state_costs = aggregate_node_costs_by_state(
@@ -2375,7 +2403,9 @@ with t_results:
                             .index
                         )
 
-                        categories = [c for c in renamed_tech_colors if c in active_categories]
+                        categories = [
+                            c for c in renamed_tech_colors if c in active_categories
+                        ]
 
                         df_plot = df_plot[df_plot["tech_label"].isin(categories)]
 
@@ -2398,7 +2428,9 @@ with t_results:
                                     title="Technology",
                                     scale=alt.Scale(
                                         domain=categories,
-                                        range=[renamed_tech_colors[c] for c in categories],
+                                        range=[
+                                            renamed_tech_colors[c] for c in categories
+                                        ],
                                     ),
                                 ),
                                 tooltip=[
@@ -2500,16 +2532,24 @@ with t_results:
 
                 if result_view == "Economic comparison":
                     if st.session_state.results is None:
-                        st.info("Run an optimization first to show the economic comparison.")
+                        st.info(
+                            "Run an optimization first to show the economic comparison."
+                        )
                         st.stop()
 
                     df = st.session_state.results
                     df = df.rename(columns=label_map)
                     df = df / 1e3
 
-                    df = df[df.index.get_level_values(0).str.contains("Economics")].round(1)
+                    df = df[
+                        df.index.get_level_values(0).str.contains("Economics")
+                    ].round(1)
 
-                    df = df.reset_index().drop(columns=["component"]).set_index("carrier")
+                    df = (
+                        df.reset_index()
+                        .drop(columns=["component"])
+                        .set_index("carrier")
+                    )
 
                     st.bar_chart(
                         df.T,
@@ -2564,7 +2604,9 @@ with t_insurance:
     """)
 
     try:
-        with st.spinner("Downloading precomputed insurance scenarios (depending on your internet speed this might take some minutes)..."):
+        with st.spinner(
+            "Downloading precomputed insurance scenarios (depending on your internet speed this might take some minutes)..."
+        ):
             insurance_networks = load_precomputed_insurance_scenarios(nodes)
 
     except Exception as exc:
@@ -2581,7 +2623,21 @@ with t_insurance:
         "All scenarios are compared against the 0% local e-fuel production reference case."
     )
 
-    diesel_shocks_l = [0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
+    diesel_price_unit = st.selectbox(
+        "Diesel import price shock unit",
+        ["AUD/liter", "AUD/t diesel"],
+        index=0,
+    )
+
+    diesel_shocks_l = [0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5]
+
+    if diesel_price_unit == "AUD/liter":
+        diesel_x_col = "Assumed diesel import price increase (AUD/liter)"
+        diesel_x_title = "Assumed diesel import price increase (AUD/liter)"
+    else:
+        diesel_x_col = "Assumed diesel import price increase (AUD/t diesel)"
+        diesel_x_title = "Assumed diesel import price increase (AUD/t diesel)"
+
     ammonia_shocks = [
         0,
         300,
@@ -2648,6 +2704,7 @@ with t_insurance:
                 {
                     "Scenario": scenario_display_labels[scenario_label],
                     "Assumed diesel import price increase (AUD/liter)": diesel_shock_l,
+                    "Assumed diesel import price increase (AUD/t diesel)": diesel_shock,
                     "System cost (MAUD/year)": scenario_cost,
                     "Additional system cost relative to baseline (MAUD/year)": additional_system_cost,
                     "Value of displaced import exposure (MAUD/year)": value_of_displaced_import_exposure,
@@ -2735,8 +2792,8 @@ with t_insurance:
     st.altair_chart(
         make_insurance_chart(
             diesel_df,
-            "Assumed diesel import price increase (AUD/liter)",
-            "Assumed diesel import price increase (AUD/liter)",
+            diesel_x_col,
+            diesel_x_title,
         ),
         width="stretch",
     )
