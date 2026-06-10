@@ -2726,6 +2726,13 @@ with t_insurance:
     ammonia_df = pd.DataFrame(ammonia_rows)
     scenario_detail_df = pd.DataFrame(scenario_detail_rows)
 
+    scenario_detail_df["Insurance break-even (AUD/t diesel)"] = (
+        scenario_detail_df["Additional system cost relative to baseline (MAUD/year)"]
+        / scenario_detail_df[
+            "Additional diesel-equivalent fuel displacement relative to baseline (Mtpa)"
+        ]
+    )
+
     scenario_overview_df = scenario_detail_df[
         [
             "Scenario",
@@ -2878,8 +2885,8 @@ with t_insurance:
             "Scenario",
             "Additional system cost relative to baseline (MAUD/year)",
             "Additional diesel-equivalent fuel displacement relative to baseline (Mtpa)",
+            "Insurance break-even (AUD/t diesel)",
             "Additional e-ammonia relative to baseline (Mtpa)",
-            "Avoided emissions from diesel replacement (MtCO2/year)",
         ]
     ]
 
