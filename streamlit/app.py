@@ -2617,21 +2617,23 @@ with t_insurance:
         "All scenarios are compared against the 0% local e-fuel production reference case."
     )
 
-    diesel_price_unit = st.selectbox(
-        "Diesel import price unit",
-        ["AUD/liter", "AUD/t diesel"],
-        index=0,
-    )
-
     diesel_prices_l = [1.77, 2.00, 2.25, 2.50, 2.75, 3.00]
-    ammonia_prices = [700, 1000, 1300, 1600, 1900, 2200, 2500, 2800, 3100, 3400, 3700]
 
-    if diesel_price_unit == "AUD/liter":
-        diesel_x_col = "Diesel import price (AUD/liter)"
-        diesel_x_title = "Diesel import price (AUD/liter)"
-    else:
-        diesel_x_col = "Diesel import price (AUD/t diesel)"
-        diesel_x_title = "Diesel import price (AUD/t diesel)"
+    ammonia_prices = [
+        700,
+        1000,
+        1300,
+        1600,
+        1900,
+        2100,
+        2400,
+        2700,
+        3000,
+        3300,
+        3600,
+        3900,
+        4200,
+    ]
 
     baseline_network = insurance_networks[baseline_label]
     baseline_cost = baseline_network.objective / 1e6
@@ -2727,16 +2729,9 @@ with t_insurance:
     scenario_overview_df = scenario_detail_df[
         [
             "Scenario",
-            "Additional diesel-equivalent fuel displacement relative to baseline (Mtpa)",
+            "Avoided emissions from diesel replacement (MtCO2/year)",
         ]
     ].copy()
-
-    scenario_overview_df["Avoided emissions from diesel replacement (MtCO2/year)"] = (
-        scenario_overview_df[
-            "Additional diesel-equivalent fuel displacement relative to baseline (Mtpa)"
-        ]
-        * DIESEL_EMISSION_FACTOR_TCO2_PER_TONNE
-    )
 
     scenario_overview_df = scenario_overview_df[
         [
@@ -2817,16 +2812,29 @@ with t_insurance:
         )
 
     st.subheader("Diesel import shock insurance")
+
+    diesel_price_unit = st.selectbox(
+        "Display diesel prices as:",
+        ["AUD/liter", "AUD/t diesel"],
+        index=0,
+        key="diesel_price_unit",
+    )
+
+    if diesel_price_unit == "AUD/liter":
+        diesel_x_col = "Diesel import price (AUD/liter)"
+        diesel_x_title = "Diesel import price (AUD/liter)"
+        diesel_x_min = BASE_DIESEL_PRICE_AUD_PER_LITER
+    else:
+        diesel_x_col = "Diesel import price (AUD/t diesel)"
+        diesel_x_title = "Diesel import price (AUD/t diesel)"
+        diesel_x_min = BASE_DIESEL_PRICE_AUD_PER_LITER * 1000 / KG_PER_LITER_DIESEL
+
     st.altair_chart(
         make_insurance_chart(
             diesel_df,
             diesel_x_col,
             diesel_x_title,
-            (
-                BASE_DIESEL_PRICE_AUD_PER_LITER
-                if diesel_x_col == "Diesel import price (AUD/liter)"
-                else BASE_DIESEL_PRICE_AUD_PER_LITER * 1000 / KG_PER_LITER_DIESEL
-            ),
+            diesel_x_min,
         ),
         width="stretch",
     )
