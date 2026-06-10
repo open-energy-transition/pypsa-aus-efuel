@@ -138,6 +138,8 @@ MWH_PER_TONNE: dict[str, float] = {
     "e_methanol": 5.54,
 }
 KG_PER_LITER_DIESEL = 0.85
+BASE_DIESEL_PRICE_AUD_PER_LITER = 1.77
+BASE_AMMONIA_PRICE_AUD_PER_TONNE = 700
 T_PER_GJ_DIESEL = 42.8  # or MT per PJ
 DEFAULT_E_SHARE = 0.50
 DEFAULT_E_SHARE_PRODUCTION = 0.30
@@ -2624,33 +2626,20 @@ with t_insurance:
     )
 
     diesel_price_unit = st.selectbox(
-        "Diesel import price shock unit",
+        "Diesel import price unit",
         ["AUD/liter", "AUD/t diesel"],
         index=0,
     )
 
-    diesel_shocks_l = [0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5]
+    diesel_prices_l = [1.77, 2.00, 2.25, 2.50, 2.75, 3.00]
+    ammonia_prices = [700, 1000, 1300, 1600, 1900, 2200, 2500, 2800, 3100, 3400, 3700]
 
     if diesel_price_unit == "AUD/liter":
-        diesel_x_col = "Assumed diesel import price increase (AUD/liter)"
-        diesel_x_title = "Assumed diesel import price increase (AUD/liter)"
+        diesel_x_col = "Diesel import price (AUD/liter)"
+        diesel_x_title = "Diesel import price (AUD/liter)"
     else:
-        diesel_x_col = "Assumed diesel import price increase (AUD/t diesel)"
-        diesel_x_title = "Assumed diesel import price increase (AUD/t diesel)"
-
-    ammonia_shocks = [
-        0,
-        300,
-        600,
-        900,
-        1200,
-        1500,
-        1800,
-        2100,
-        2400,
-        2700,
-        3000,
-    ]
+        diesel_x_col = "Diesel import price (AUD/t diesel)"
+        diesel_x_title = "Diesel import price (AUD/t diesel)"
 
     baseline_network = insurance_networks[baseline_label]
     baseline_cost = baseline_network.objective / 1e6
@@ -2689,7 +2678,9 @@ with t_insurance:
             }
         )
 
-        for diesel_shock_l in diesel_shocks_l:
+        for diesel_price_l in diesel_prices_l:
+            diesel_shock_l = diesel_price_l - BASE_DIESEL_PRICE_AUD_PER_LITER
+            diesel_price_t = diesel_price_l * 1000 / KG_PER_LITER_DIESEL
             diesel_shock = diesel_shock_l * 1000 / KG_PER_LITER_DIESEL
 
             value_of_displaced_import_exposure = (
@@ -2703,8 +2694,8 @@ with t_insurance:
             diesel_rows.append(
                 {
                     "Scenario": scenario_display_labels[scenario_label],
-                    "Assumed diesel import price increase (AUD/liter)": diesel_shock_l,
-                    "Assumed diesel import price increase (AUD/t diesel)": diesel_shock,
+                    "Diesel import price (AUD/liter)": diesel_price_l,
+                    "Diesel import price (AUD/t diesel)": diesel_price_t,
                     "System cost (MAUD/year)": scenario_cost,
                     "Additional system cost relative to baseline (MAUD/year)": additional_system_cost,
                     "Value of displaced import exposure (MAUD/year)": value_of_displaced_import_exposure,
@@ -2712,7 +2703,9 @@ with t_insurance:
                 }
             )
 
-        for ammonia_shock in ammonia_shocks:
+        for ammonia_price in ammonia_prices:
+            ammonia_shock = ammonia_price - BASE_AMMONIA_PRICE_AUD_PER_TONNE
+
             value_of_displaced_import_exposure = (
                 additional_nh3 * 1e6 * ammonia_shock
             ) / 1e6
@@ -2724,7 +2717,7 @@ with t_insurance:
             ammonia_rows.append(
                 {
                     "Scenario": scenario_display_labels[scenario_label],
-                    "Assumed ammonia import price increase (AUD/t NH3)": ammonia_shock,
+                    "Ammonia import price (AUD/t NH3)": ammonia_price,
                     "System cost (MAUD/year)": scenario_cost,
                     "Additional system cost relative to baseline (MAUD/year)": additional_system_cost,
                     "Value of displaced import exposure (MAUD/year)": value_of_displaced_import_exposure,
@@ -2736,20 +2729,32 @@ with t_insurance:
     ammonia_df = pd.DataFrame(ammonia_rows)
     scenario_detail_df = pd.DataFrame(scenario_detail_rows)
 
-    def make_insurance_chart(df, x_col, x_title):
+    def make_insurance_chart(df, x_col, x_title, x_min):
         return (
             alt.Chart(df)
             .mark_line(point=True, strokeWidth=3, size=80)
             .encode(
                 x=alt.X(
-                    f"{x_col}:Q",
+                    x_col,
                     title=x_title,
-                    axis=alt.Axis(labelFontSize=18, titleFontSize=20),
+                    scale=alt.Scale(
+                        domain=[
+                            x_min,
+                            float(df[x_col].max()),
+                        ]
+                    ),
+                    axis=alt.Axis(
+                        labelFontSize=18,
+                        titleFontSize=20,
+                    ),
                 ),
                 y=alt.Y(
                     "Net insurance benefit (MAUD/year):Q",
                     title="Net insurance benefit (MAUD/year)",
-                    axis=alt.Axis(labelFontSize=18, titleFontSize=20),
+                    axis=alt.Axis(
+                        labelFontSize=18,
+                        titleFontSize=20,
+                    ),
                 ),
                 color=alt.Color(
                     "Scenario:N",
@@ -2794,6 +2799,11 @@ with t_insurance:
             diesel_df,
             diesel_x_col,
             diesel_x_title,
+            (
+                BASE_DIESEL_PRICE_AUD_PER_LITER
+                if diesel_x_col == "Diesel import price (AUD/liter)"
+                else BASE_DIESEL_PRICE_AUD_PER_LITER * 1000 / KG_PER_LITER_DIESEL
+            ),
         ),
         width="stretch",
     )
@@ -2802,8 +2812,9 @@ with t_insurance:
     st.altair_chart(
         make_insurance_chart(
             ammonia_df,
-            "Assumed ammonia import price increase (AUD/t NH3)",
-            "Assumed ammonia import price increase (AUD/t NH3)",
+            "Ammonia import price (AUD/t NH3)",
+            "Ammonia import price (AUD/t NH3)",
+            BASE_AMMONIA_PRICE_AUD_PER_TONNE,
         ),
         width="stretch",
     )
@@ -2811,12 +2822,14 @@ with t_insurance:
     st.info("""
         **How to interpret these charts**
 
-        The charts estimate the **insurance value of domestic e-fuel production** against import price shocks.
+        The charts estimate the **insurance value of domestic e-fuel production** against import prices above the baseline import price.
 
         * Each line represents a different level of **local e-fuel production** (0–100%). The same share is applied to both **e-methanol** production for diesel replacement and **e-ammonia** production for fertilizer demand.
-        * The first chart shows the insurance value against **imported diesel price shocks**.
-        * The second chart shows the insurance value against **imported ammonia price shocks**.
+        * The first chart shows the insurance value at different **diesel import prices**.
+        * The second chart shows the insurance value at different **ammonia import prices**.
         * The **y-axis** shows the **net insurance benefit** (MAUD/year), calculated as the estimated value of reduced import exposure minus the additional annual system cost relative to the **0% local e-fuel production reference case**.
+
+        The baseline import prices are **1.77 AUD/liter for diesel** and **700 AUD/t NH3 for ammonia**. The value of reduced import exposure is calculated only for the price difference above these baselines.
 
         At **zero import price shock**, the net insurance benefit is negative and equal to the additional annual system cost associated with domestic e-fuel production. As import prices increase, the value of reducing import exposure increases and the net insurance benefit improves.
 
