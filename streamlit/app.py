@@ -2858,7 +2858,8 @@ with t_insurance:
         * Each line represents a different level of **local e-fuel production** (0–100%). The same share is applied to both **e-methanol** production for diesel replacement and **e-ammonia** production for fertilizer demand.
         * The first chart shows the insurance value at different **diesel import prices**.
         * The second chart shows the insurance value at different **ammonia import prices**.
-        * The **y-axis** shows the **net insurance benefit** (MAUD/year), calculated as the estimated value of reduced import exposure minus the additional annual system cost relative to the **0% local e-fuel production reference case**.
+        * The **y-axis** shows the **net insurance benefit** (MAUD/year), calculated as the **avoided cost of importing the displaced fuel volume at the assumed import price minus the additional annual system cost relative to the 0% local e-fuel production reference case**.
+        The avoided import expenditure is calculated by multiplying the additional volume of domestic e-fuel production (relative to the 0% scenario) by the difference between the assumed import price and the baseline import price.
 
         The baseline import prices are **1.77 AUD/liter for diesel** and **700 AUD/t NH3 for ammonia**. The value of reduced import exposure is calculated only for the price difference above these baselines.
 
