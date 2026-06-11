@@ -30,6 +30,8 @@ from results_helpers import *
 
 import streamlit as st
 
+is_production = True
+
 
 def get_secret(name: str) -> str:
     """Return a secret from Streamlit secrets or environment variables."""
@@ -735,45 +737,47 @@ with st.sidebar:
             else:
                 st.error("File not found in the given Zenodo record.")
 
-    with st.expander("Local PyPSA-Earth Network", expanded=False):
-        uploaded_file = st.file_uploader(
-            "Choose a PyPSA NetCDF file",
-            type=["nc"],
-            max_upload_size=5,
-        )
+    if not is_production:
+        with st.expander("Local PyPSA-Earth Network", expanded=False):
+            uploaded_file = st.file_uploader(
+                "Choose a PyPSA NetCDF file",
+                type=["nc"],
+                max_upload_size=5,
+            )
 
-        if "uploaded_network_name" not in st.session_state:
-            st.session_state.uploaded_network_name = None
+            if "uploaded_network_name" not in st.session_state:
+                st.session_state.uploaded_network_name = None
 
-        if uploaded_file is not None:
-            if uploaded_file.name != st.session_state.uploaded_network_name:
-                with tempfile.NamedTemporaryFile(
-                    delete=False, suffix=".nc"
-                ) as tmp_file:
-                    tmp_file.write(uploaded_file.getvalue())
-                    tmp_path = tmp_file.name
+            if uploaded_file is not None:
+                if uploaded_file.name != st.session_state.uploaded_network_name:
+                    with tempfile.NamedTemporaryFile(
+                        delete=False, suffix=".nc"
+                    ) as tmp_file:
+                        tmp_file.write(uploaded_file.getvalue())
+                        tmp_path = tmp_file.name
 
-                with st.spinner("Loading network..."):
-                    n = pypsa.Network(tmp_path)
-                    register_loaded_network(n)
-                    st.session_state.uploaded_network_name = uploaded_file.name
+                    with st.spinner("Loading network..."):
+                        n = pypsa.Network(tmp_path)
+                        register_loaded_network(n)
+                        st.session_state.uploaded_network_name = uploaded_file.name
 
-                if os.path.exists(tmp_path):
-                    os.remove(tmp_path)
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
 
     if st.session_state.network_loaded:
         show_statistics(st.session_state.n)
 
-    pkgs = {}
-    for pkg in ["highspy", "linopy", "pypsa", "streamlit"]:
-        pkg_version = version(pkg)
-        pkgs[pkg] = pkg_version
-        if pkg == "pypsa":
-            st.session_state.PYPSA_VERSION = version(pkg)
+    if not is_production:
+        pkgs = {}
+        for pkg in ["highspy", "linopy", "pypsa", "streamlit"]:
+            pkg_version = version(pkg)
+            pkgs[pkg] = pkg_version
+            if pkg == "pypsa":
+                st.session_state.PYPSA_VERSION = version(pkg)
 
-    with st.expander("Installed Main Packages", expanded=False):
-        df = pd.DataFrame.from_dict(pkgs, orient="index", columns=["Versions"])
-        st.dataframe(df)
+        with st.expander("Installed Main Packages", expanded=False):
+            df = pd.DataFrame.from_dict(pkgs, orient="index", columns=["Versions"])
+            st.dataframe(df)
 
 # Tabs
 tabs = [
@@ -803,17 +807,17 @@ with t_welcome:
         "Detailed Demand Split Parameters for Diesel / Methanol", expanded=False
     ):
 
-        col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(
+        cols = st.columns(
             8, vertical_alignment="top"
         )
-        col1.write("**Sector**")
-        col2.write("**Historic Diesel Demand (Mtpa)**")
-        col3.write("**Electrified Demand Share (%)**")
-        col4.write("**Remaining Diesel Demand (Mtpa)**")
-        col5.write("**Domestic Grey Diesel Supply (Mtpa)**")
-        col6.write("**Domestic Grey Diesel Share (%)**")
-        col7.write("**Requested e-Diesel Share (%)**")
-        col8.write("**Required e-Methanol Production (Mtpa)**")
+        cols[0].write("**Sector**")
+        cols[1].write("**Historic Diesel Demand (Mtpa)**")
+        cols[2].write("**Electrified Demand Share (%)**")
+        cols[3].write("**Remaining Diesel Demand (Mtpa)**")
+        cols[4].write("**Domestic Grey Diesel Supply (Mtpa)**")
+        cols[5].write("**Domestic Grey Diesel Share (%)**")
+        cols[6].write("**Requested e-Diesel Share (%)**")
+        cols[7].write("**Required e-Methanol Production (Mtpa)**")
 
         old_demand = {}
         new_demand_meoh = {}
@@ -822,12 +826,12 @@ with t_welcome:
         total_remaining_demand = 0
         for s in sectors:
             old_demand[s] = sectors[s]["demand"]
-            col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(
+            cols = st.columns(
                 8, vertical_alignment="top"
             )
-            col1.write(f"**{s}**")
-            col2.write(f"{sectors[s]['demand']:.1f} ")
-            with col3:
+            cols[0].write(f"**{s}**")
+            cols[1].write(f"{sectors[s]['demand']:.1f} ")
+            with cols[2]:
                 new_share[s] = st.slider(
                     label=f"Electrification Share {s}",
                     label_visibility="collapsed",
@@ -840,20 +844,20 @@ with t_welcome:
                 )
 
             new_demand_meoh[s] = old_demand[s] * (1 - new_share[s] / 100)
-            col4.write(f"{new_demand_meoh[s]:.1f}")
+            cols[3].write(f"{new_demand_meoh[s]:.1f}")
 
             total_demand += sectors[s]["demand"]
             total_remaining_demand += new_demand_meoh[s]
 
-        col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(
+        cols = st.columns(
             8, vertical_alignment="top"
         )
-        col1.write("**Total**")
-        col2.write(f"{total_demand:.1f}")
+        cols[0].write("**Total**")
+        cols[1].write(f"{total_demand:.1f}")
         total_electrification_share = (
             total_demand - total_remaining_demand
         ) / total_demand
-        col3.slider(
+        cols[2].slider(
             label=f"Electrification Share {s}",
             label_visibility="collapsed",
             min_value=0.0,
@@ -863,9 +867,9 @@ with t_welcome:
             format="%.1f%%",
             disabled=True,
         )
-        col4.write(f"{total_remaining_demand:.1f}")
+        cols[3].write(f"{total_remaining_demand:.1f}")
 
-        with col5:
+        with cols[4]:
             domestic_supply = st.slider(
                 label="Domestic Diesel Supply",
                 label_visibility="collapsed",
@@ -876,7 +880,7 @@ with t_welcome:
                 format="%.1f Mtpa",
                 key="draft_domestic_diesel_supply",
             )
-        with col6:
+        with cols[5]:
             domestic_supply_share = st.slider(
                 label="Domestic Diesel Share",
                 label_visibility="collapsed",
@@ -887,7 +891,7 @@ with t_welcome:
                 format="%.1f%%",
                 disabled=True,
             )
-        with col7:
+        with cols[6]:
             domestic_requested_share = st.slider(
                 label="Requested Diesel e-Share",
                 label_visibility="collapsed",
@@ -898,7 +902,7 @@ with t_welcome:
                 format="%.0f%%",
                 key="draft_requested_diesel_e_share",
             )
-        with col8:
+        with cols[7]:
             domestic_requested_demand = st.slider(
                 label="Methanol Demand",
                 label_visibility="collapsed",
@@ -927,17 +931,17 @@ with t_welcome:
         "Detailed Demand Split Parameters for Fertilizers / Ammonia", expanded=False
     ):
 
-        col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(
+        cols = st.columns(
             8, vertical_alignment="top"
         )
-        col1.write("**Sector**")
-        col2.write("**Historic Fertilizer Demand (Mtpa)**")
-        col3.write("**Electrified Share (%)**")
-        col4.write("**Remaining Fertilizer Demand (Mtpa)**")
-        col5.write("**Domestic Grey Ammonia Supply (Mtpa)**")
-        col6.write("**Domestic Grey Ammonia Share (%)**")
-        col7.write("**Requested e-Ammonia Share (%)**")
-        col8.write("**Required e-Ammonia Production (Mtpa)**")
+        cols[0].write("**Sector**")
+        cols[1].write("**Historic Fertilizer Demand (Mtpa)**")
+        cols[2].write("**Electrified Share (%)**")
+        cols[3].write("**Remaining Fertilizer Demand (Mtpa)**")
+        cols[4].write("**Domestic Grey Ammonia Supply (Mtpa)**")
+        cols[5].write("**Domestic Grey Ammonia Share (%)**")
+        cols[6].write("**Requested e-Ammonia Share (%)**")
+        cols[7].write("**Required e-Ammonia Production (Mtpa)**")
 
         old_demand = {}
         new_demand_nh3 = {}
@@ -946,14 +950,14 @@ with t_welcome:
         total_remaining_demand = 0
         for s in fertilizeres:
             old_demand[s] = fertilizeres[s]["demand"] * fertilizeres[s]["ammonia_equiv"]
-            col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(
+            cols = st.columns(
                 8, vertical_alignment="top"
             )
-            col1.write(f"**{s}**")
-            col2.write(
+            cols[0].write(f"**{s}**")
+            cols[1].write(
                 f"{(fertilizeres[s]['demand']*fertilizeres[s]['ammonia_equiv']):.1f} "
             )
-            with col3:
+            with cols[2]:
                 new_share[s] = st.slider(
                     label=f"Electrification Share {s}",
                     label_visibility="collapsed",
@@ -966,22 +970,22 @@ with t_welcome:
                     key=f"draft_fertilizer_e_share_{s}",
                 )
 
-            with col4:
+            with cols[3]:
                 new_demand_nh3[s] = old_demand[s] * (1 - new_share[s] / 100)
                 st.write(f"{new_demand_nh3[s]:.1f}")
 
             total_demand += fertilizeres[s]["demand"] * fertilizeres[s]["ammonia_equiv"]
             total_remaining_demand += new_demand_nh3[s]
 
-        col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(
+        cols = st.columns(
             8, vertical_alignment="top"
         )
-        col1.write("**Total**")
-        col2.write(f"{total_demand:.1f}")
+        cols[0].write("**Total**")
+        cols[1].write(f"{total_demand:.1f}")
         total_electrification_share = (
             total_demand - total_remaining_demand
         ) / total_demand
-        col3.slider(
+        cols[2].slider(
             label=f"Electrification Share {s}",
             label_visibility="collapsed",
             min_value=0.0,
@@ -991,9 +995,9 @@ with t_welcome:
             format="%.1f%%",
             disabled=True,
         )
-        col4.write(f"{total_remaining_demand:.1f}")
+        cols[3].write(f"{total_remaining_demand:.1f}")
 
-        with col5:
+        with cols[4]:
             domestic_supply = st.slider(
                 label="Domestic Ammonia Supply",
                 label_visibility="collapsed",
@@ -1004,7 +1008,7 @@ with t_welcome:
                 format="%.1f Mtpa",
                 key="draft_domestic_ammonia_supply",
             )
-        with col6:
+        with cols[5]:
             domestic_supply_share = st.slider(
                 label="Domestic Ammonia Share",
                 label_visibility="collapsed",
@@ -1015,7 +1019,7 @@ with t_welcome:
                 format="%.1f%%",
                 disabled=True,
             )
-        with col7:
+        with cols[6]:
             domestic_requested_share = st.slider(
                 label="Requested Ammonia e-Share",
                 label_visibility="collapsed",
@@ -1026,7 +1030,7 @@ with t_welcome:
                 format="%.0f%%",
                 key="draft_requested_ammonia_e_share",
             )
-        with col8:
+        with cols[7]:
             domestic_requested_demand = st.slider(
                 label="e-Ammonia Demand",
                 label_visibility="collapsed",
@@ -1118,16 +1122,16 @@ with t_economic:
                     tech_data[d]["mc"],
                 )
 
-            col1, col2, col3, col4 = st.columns(4, vertical_alignment="top")
-            col2.write("**Discount Rate (%)**")
-            col3.write("**Overnight Investment Cost (AUD/MW)**")
-            col4.write("**Marginal Cost (AUD/MWh)**")
+            cols = st.columns(4, vertical_alignment="top")
+            cols[1].write("**Discount Rate (%)**")
+            cols[2].write("**Overnight Investment Cost (AUD/MW)**")
+            cols[3].write("**Marginal Cost (AUD/MWh)**")
 
             for d in tech_data:
-                col1, col2, col3, col4 = st.columns(4, vertical_alignment="top")
-                col1.write(f"**{tech_data[d]['label']}**")
+                cols = st.columns(4, vertical_alignment="top")
+                cols[0].write(f"**{tech_data[d]['label']}**")
 
-                with col2:
+                with cols[1]:
                     old_ui_dr[d] = round_multiple(old_dr[d], 0.1)
                     new_dr[d] = st.slider(
                         label=f"dr_{tech_data[d]['label']}",
@@ -1140,7 +1144,7 @@ with t_economic:
                         key=f"draft_dr_{d}",
                     )
 
-                with col3:
+                with cols[2]:
                     old_ui_cc[d] = investment_cost(old_cc[d], new_dr[d], old_lt[d])
                     new_cc[d] = st.slider(
                         label=f"cc_{tech_data[d]['label']}",
@@ -1153,7 +1157,7 @@ with t_economic:
                         key=f"draft_cc_{d}",
                     )
 
-                with col4:
+                with cols[3]:
                     old_ui_mc[d] = round_multiple(old_mc[d], 0.1)
                     new_mc[d] = st.slider(
                         label=f"mc_{tech_data[d]['label']}",
@@ -1303,18 +1307,18 @@ with t_demand:
             else:
                 new_cost = st.session_state.new_cost
 
-            col1, col2, col3, col4 = st.columns(4, vertical_alignment="top")
-            col2.write("**Current Demand**")
-            col3.write("**New / Proposed Demand**")
-            col4.write("**Avoided Import Price / Tonne**")
+            cols = st.columns(4, vertical_alignment="top")
+            cols[1].write("**Current Demand**")
+            cols[2].write("**New / Proposed Demand**")
+            cols[3].write("**Avoided Import Price / Tonne**")
 
             for l in load_data:
-                col1, col2, col3, col4 = st.columns(4, vertical_alignment="top")
+                cols = st.columns(4, vertical_alignment="top")
 
-                col1.write(f"**{load_data[l]['label']}**")
-                col2.write(f"{old_multiplier[l]:.1f} Mtpa")
+                cols[0].write(f"**{load_data[l]['label']}**")
+                cols[1].write(f"{old_multiplier[l]:.1f} Mtpa")
 
-                with col3:
+                with cols[2]:
                     new_multiplier[l] = st.slider(
                         label=f"Demand Multiplier {l}",
                         label_visibility="collapsed",
@@ -1326,7 +1330,7 @@ with t_demand:
                         key=f"draft_demand_{l}",
                     )
 
-                with col4:
+                with cols[3]:
                     new_cost[l] = st.slider(
                         label=f"Cost {l}",
                         label_visibility="collapsed",
@@ -1348,7 +1352,7 @@ with t_demand:
                         )
 
                         st.caption(
-                            f"Equivalent Diesel Replacement Value: "
+                            f"Equivalent Diesel Value: "
                             f"{diesel_equivalent:.2f} AUD/liter"
                         )
 
@@ -1392,34 +1396,34 @@ with t_optimization:
             st.write(scenario_summary)
 
         with st.expander("Configuration", expanded=False):
-            col1, col2, col3, col4 = st.columns(4)
+            cols = st.columns(4)
 
-            col1.metric("Country", "Australia")
-            col2.metric("Planning year", "2030")
-            col3.metric("Clusters", str(network_clusters))
-            col4.metric("Resolution", "3h")
+            cols[0].metric("Country", "Australia")
+            cols[1].metric("Planning year", "2030")
+            cols[2].metric("Clusters", str(network_clusters))
+            cols[3].metric("Resolution", "3h")
 
-            col1, col2, col3, col4 = st.columns(4)
+            cols = st.columns(4)
 
             cost_setup = (
                 "Custom" if st.session_state.get("costs_modified") else "Reference"
             )
-            col1.metric("Cost setup", cost_setup)
-            col2.metric("H2 demand", f"{demand['custom_h2']:.1f} Mtpa")
-            col3.metric("Grey ammonia", f"{demand['grey_ammonia']:.1f} Mtpa")
-            col4.metric("e-ammonia", f"{demand['e_ammonia']:.1f} Mtpa")
+            cols[0].metric("Cost setup", cost_setup)
+            cols[1].metric("H2 demand", f"{demand['custom_h2']:.1f} Mtpa")
+            cols[2].metric("Grey ammonia", f"{demand['grey_ammonia']:.1f} Mtpa")
+            cols[3].metric("e-ammonia", f"{demand['e_ammonia']:.1f} Mtpa")
 
-            col1, col2, col3, col4 = st.columns(4)
+            cols = st.columns(4)
 
-            col1.metric("Grey methanol", f"{demand['grey_methanol']:.1f} Mtpa")
-            col2.metric("e-methanol", f"{demand['e_methanol']:.1f} Mtpa")
-            col3.metric("Total ammonia", f"{ammonia:.1f} Mtpa")
-            col4.metric("Total methanol", f"{methanol:.1f} Mtpa")
+            cols[0].metric("Grey methanol", f"{demand['grey_methanol']:.1f} Mtpa")
+            cols[1].metric("e-methanol", f"{demand['e_methanol']:.1f} Mtpa")
+            cols[2].metric("Total ammonia", f"{ammonia:.1f} Mtpa")
+            cols[3].metric("Total methanol", f"{methanol:.1f} Mtpa")
 
         with st.expander("Snapshot Options", expanded=True):
-            col1, col2, col3 = st.columns(3, vertical_alignment="top")
+            cols = st.columns(3, vertical_alignment="top")
 
-            with col1:
+            with cols[0]:
                 run_mode = st.radio(
                     "Desired optimization snapshots",
                     ["Full Year", "Full Month", "Week per Month"],
@@ -1428,7 +1432,7 @@ with t_optimization:
                 )
 
             if run_mode != "Full Year":
-                with col2:
+                with cols[1]:
                     months = st.multiselect(
                         "Month(s) to consider",
                         [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
@@ -1437,7 +1441,7 @@ with t_optimization:
             else:
                 months = list(range(1, 13))
 
-            with col3:
+            with cols[2]:
                 if run_mode == "Week per Month":
                     weeks = st.radio(
                         "Week no within selected months",
@@ -1449,21 +1453,25 @@ with t_optimization:
                     weeks = None
 
         with st.expander("Solver Options", expanded=False):
-            use_highs = run_mode == "Week per Month" and len(months) == 1
+            cols = st.columns(3, vertical_alignment="bottom")
 
-            solver_default_index = 0 if use_highs else 1
+            with cols[0]:
+                use_highs = run_mode == "Week per Month" and len(months) == 1
 
-            solver_name = st.radio(
-                "Solver to use for optimization",
-                ["highs", "OETC"],
-                index=solver_default_index,
-                horizontal=True,
-            )
+                solver_default_index = 0 if use_highs else 1
 
-            if use_highs:
-                st.caption("Default: HiGHS for a single selected week.")
-            else:
-                st.caption("Default: OETC for larger optimization scopes.")
+                solver_name = st.radio(
+                    "Solver to use for optimization",
+                    ["highs", "OETC"],
+                    index=solver_default_index,
+                    horizontal=True,
+                )
+
+            with cols[1]:
+                if use_highs:
+                    st.caption("Default: HiGHS for a single selected week.")
+                else:
+                    st.caption("Default: OETC for larger optimization scopes.")
 
         if new_cost is not None and new_multiplier is not None:
 
@@ -2182,7 +2190,7 @@ with t_results:
                             )
 
                             with st.expander(
-                                f"Show {dispatch_category} annual totals for scenario {dispatch_label}",
+                                f"Show {dispatch_category} annual total production for scenario {dispatch_label}",
                                 expanded=False,
                             ):
                                 st.dataframe(
@@ -2628,13 +2636,13 @@ with t_insurance:
     st.subheader("Diesel import shock insurance")
     st.image(
         diesel_figure_path,
-        use_container_width=True,
+        width="stretch",
     )
 
     st.subheader("Ammonia import shock insurance")
     st.image(
         ammonia_figure_path,
-        use_container_width=True,
+        width="stretch",
     )
 
     st.info("""
