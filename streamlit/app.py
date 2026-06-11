@@ -807,9 +807,7 @@ with t_welcome:
         "Detailed Demand Split Parameters for Diesel / Methanol", expanded=False
     ):
 
-        cols = st.columns(
-            8, vertical_alignment="top"
-        )
+        cols = st.columns(8, vertical_alignment="top")
         cols[0].write("**Sector**")
         cols[1].write("**Historic Diesel Demand (Mtpa)**")
         cols[2].write("**Electrified Demand Share (%)**")
@@ -826,9 +824,7 @@ with t_welcome:
         total_remaining_demand = 0
         for s in sectors:
             old_demand[s] = sectors[s]["demand"]
-            cols = st.columns(
-                8, vertical_alignment="top"
-            )
+            cols = st.columns(8, vertical_alignment="top")
             cols[0].write(f"**{s}**")
             cols[1].write(f"{sectors[s]['demand']:.1f} ")
             with cols[2]:
@@ -849,9 +845,7 @@ with t_welcome:
             total_demand += sectors[s]["demand"]
             total_remaining_demand += new_demand_meoh[s]
 
-        cols = st.columns(
-            8, vertical_alignment="top"
-        )
+        cols = st.columns(8, vertical_alignment="top")
         cols[0].write("**Total**")
         cols[1].write(f"{total_demand:.1f}")
         total_electrification_share = (
@@ -931,9 +925,7 @@ with t_welcome:
         "Detailed Demand Split Parameters for Fertilizers / Ammonia", expanded=False
     ):
 
-        cols = st.columns(
-            8, vertical_alignment="top"
-        )
+        cols = st.columns(8, vertical_alignment="top")
         cols[0].write("**Sector**")
         cols[1].write("**Historic Fertilizer Demand (Mtpa)**")
         cols[2].write("**Electrified Share (%)**")
@@ -950,9 +942,7 @@ with t_welcome:
         total_remaining_demand = 0
         for s in fertilizeres:
             old_demand[s] = fertilizeres[s]["demand"] * fertilizeres[s]["ammonia_equiv"]
-            cols = st.columns(
-                8, vertical_alignment="top"
-            )
+            cols = st.columns(8, vertical_alignment="top")
             cols[0].write(f"**{s}**")
             cols[1].write(
                 f"{(fertilizeres[s]['demand']*fertilizeres[s]['ammonia_equiv']):.1f} "
@@ -977,9 +967,7 @@ with t_welcome:
             total_demand += fertilizeres[s]["demand"] * fertilizeres[s]["ammonia_equiv"]
             total_remaining_demand += new_demand_nh3[s]
 
-        cols = st.columns(
-            8, vertical_alignment="top"
-        )
+        cols = st.columns(8, vertical_alignment="top")
         cols[0].write("**Total**")
         cols[1].write(f"{total_demand:.1f}")
         total_electrification_share = (

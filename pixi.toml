@@ -66,11 +66,14 @@ openjdk = "17.*"
 streamlit = ">=1.57.0,<2"
 linopy = ">=0.5.7"
 highs = ">=1.14.0,<2"
+numpoly = ">=1.2.12,<2"
 
 [pypi-dependencies]
 currencyconverter = "*"
 googledrivedownloader = ">=1.1"
 zenodo-get = ">=3.0.0, <4"
+google-cloud-storage = "*"
+requests = "*"
 
 [activation]
 scripts = ["pixi/activate.sh"]
