@@ -30,6 +30,8 @@ from results_helpers import *
 
 import streamlit as st
 
+is_production = True
+
 
 def get_secret(name: str) -> str:
     """Return a secret from Streamlit secrets or environment variables."""
@@ -138,7 +140,10 @@ MWH_PER_TONNE: dict[str, float] = {
     "e_methanol": 5.54,
 }
 KG_PER_LITER_DIESEL = 0.85
+BASE_DIESEL_PRICE_AUD_PER_LITER = 1.77
+BASE_AMMONIA_PRICE_AUD_PER_TONNE = 700
 T_PER_GJ_DIESEL = 42.8  # or MT per PJ
+DIESEL_EMISSION_FACTOR_TCO2_PER_TONNE = 3.16
 DEFAULT_E_SHARE = 0.50
 DEFAULT_E_SHARE_PRODUCTION = 0.30
 
@@ -732,45 +737,47 @@ with st.sidebar:
             else:
                 st.error("File not found in the given Zenodo record.")
 
-    with st.expander("Local PyPSA-Earth Network", expanded=False):
-        uploaded_file = st.file_uploader(
-            "Choose a PyPSA NetCDF file",
-            type=["nc"],
-            max_upload_size=5,
-        )
+    if not is_production:
+        with st.expander("Local PyPSA-Earth Network", expanded=False):
+            uploaded_file = st.file_uploader(
+                "Choose a PyPSA NetCDF file",
+                type=["nc"],
+                max_upload_size=5,
+            )
 
-        if "uploaded_network_name" not in st.session_state:
-            st.session_state.uploaded_network_name = None
+            if "uploaded_network_name" not in st.session_state:
+                st.session_state.uploaded_network_name = None
 
-        if uploaded_file is not None:
-            if uploaded_file.name != st.session_state.uploaded_network_name:
-                with tempfile.NamedTemporaryFile(
-                    delete=False, suffix=".nc"
-                ) as tmp_file:
-                    tmp_file.write(uploaded_file.getvalue())
-                    tmp_path = tmp_file.name
+            if uploaded_file is not None:
+                if uploaded_file.name != st.session_state.uploaded_network_name:
+                    with tempfile.NamedTemporaryFile(
+                        delete=False, suffix=".nc"
+                    ) as tmp_file:
+                        tmp_file.write(uploaded_file.getvalue())
+                        tmp_path = tmp_file.name
 
-                with st.spinner("Loading network..."):
-                    n = pypsa.Network(tmp_path)
-                    register_loaded_network(n)
-                    st.session_state.uploaded_network_name = uploaded_file.name
+                    with st.spinner("Loading network..."):
+                        n = pypsa.Network(tmp_path)
+                        register_loaded_network(n)
+                        st.session_state.uploaded_network_name = uploaded_file.name
 
-                if os.path.exists(tmp_path):
-                    os.remove(tmp_path)
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
 
     if st.session_state.network_loaded:
         show_statistics(st.session_state.n)
 
-    pkgs = {}
-    for pkg in ["highspy", "linopy", "pypsa", "streamlit"]:
-        pkg_version = version(pkg)
-        pkgs[pkg] = pkg_version
-        if pkg == "pypsa":
-            st.session_state.PYPSA_VERSION = version(pkg)
+    if not is_production:
+        pkgs = {}
+        for pkg in ["highspy", "linopy", "pypsa", "streamlit"]:
+            pkg_version = version(pkg)
+            pkgs[pkg] = pkg_version
+            if pkg == "pypsa":
+                st.session_state.PYPSA_VERSION = version(pkg)
 
-    with st.expander("Installed Main Packages", expanded=False):
-        df = pd.DataFrame.from_dict(pkgs, orient="index", columns=["Versions"])
-        st.dataframe(df)
+        with st.expander("Installed Main Packages", expanded=False):
+            df = pd.DataFrame.from_dict(pkgs, orient="index", columns=["Versions"])
+            st.dataframe(df)
 
 # Tabs
 tabs = [
@@ -800,17 +807,17 @@ with t_welcome:
         "Detailed Demand Split Parameters for Diesel / Methanol", expanded=False
     ):
 
-        col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(
+        cols = st.columns(
             8, vertical_alignment="top"
         )
-        col1.write("**Sector**")
-        col2.write("**Historic Diesel Demand (Mtpa)**")
-        col3.write("**Electrified Demand Share (%)**")
-        col4.write("**Remaining Diesel Demand (Mtpa)**")
-        col5.write("**Domestic Grey Diesel Supply (Mtpa)**")
-        col6.write("**Domestic Grey Diesel Share (%)**")
-        col7.write("**Requested e-Diesel Share (%)**")
-        col8.write("**Required e-Methanol Production (Mtpa)**")
+        cols[0].write("**Sector**")
+        cols[1].write("**Historic Diesel Demand (Mtpa)**")
+        cols[2].write("**Electrified Demand Share (%)**")
+        cols[3].write("**Remaining Diesel Demand (Mtpa)**")
+        cols[4].write("**Domestic Grey Diesel Supply (Mtpa)**")
+        cols[5].write("**Domestic Grey Diesel Share (%)**")
+        cols[6].write("**Requested e-Diesel Share (%)**")
+        cols[7].write("**Required e-Methanol Production (Mtpa)**")
 
         old_demand = {}
         new_demand_meoh = {}
@@ -819,12 +826,12 @@ with t_welcome:
         total_remaining_demand = 0
         for s in sectors:
             old_demand[s] = sectors[s]["demand"]
-            col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(
+            cols = st.columns(
                 8, vertical_alignment="top"
             )
-            col1.write(f"**{s}**")
-            col2.write(f"{sectors[s]['demand']:.1f} ")
-            with col3:
+            cols[0].write(f"**{s}**")
+            cols[1].write(f"{sectors[s]['demand']:.1f} ")
+            with cols[2]:
                 new_share[s] = st.slider(
                     label=f"Electrification Share {s}",
                     label_visibility="collapsed",
@@ -837,20 +844,20 @@ with t_welcome:
                 )
 
             new_demand_meoh[s] = old_demand[s] * (1 - new_share[s] / 100)
-            col4.write(f"{new_demand_meoh[s]:.1f}")
+            cols[3].write(f"{new_demand_meoh[s]:.1f}")
 
             total_demand += sectors[s]["demand"]
             total_remaining_demand += new_demand_meoh[s]
 
-        col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(
+        cols = st.columns(
             8, vertical_alignment="top"
         )
-        col1.write("**Total**")
-        col2.write(f"{total_demand:.1f}")
+        cols[0].write("**Total**")
+        cols[1].write(f"{total_demand:.1f}")
         total_electrification_share = (
             total_demand - total_remaining_demand
         ) / total_demand
-        col3.slider(
+        cols[2].slider(
             label=f"Electrification Share {s}",
             label_visibility="collapsed",
             min_value=0.0,
@@ -860,9 +867,9 @@ with t_welcome:
             format="%.1f%%",
             disabled=True,
         )
-        col4.write(f"{total_remaining_demand:.1f}")
+        cols[3].write(f"{total_remaining_demand:.1f}")
 
-        with col5:
+        with cols[4]:
             domestic_supply = st.slider(
                 label="Domestic Diesel Supply",
                 label_visibility="collapsed",
@@ -873,7 +880,7 @@ with t_welcome:
                 format="%.1f Mtpa",
                 key="draft_domestic_diesel_supply",
             )
-        with col6:
+        with cols[5]:
             domestic_supply_share = st.slider(
                 label="Domestic Diesel Share",
                 label_visibility="collapsed",
@@ -884,7 +891,7 @@ with t_welcome:
                 format="%.1f%%",
                 disabled=True,
             )
-        with col7:
+        with cols[6]:
             domestic_requested_share = st.slider(
                 label="Requested Diesel e-Share",
                 label_visibility="collapsed",
@@ -895,7 +902,7 @@ with t_welcome:
                 format="%.0f%%",
                 key="draft_requested_diesel_e_share",
             )
-        with col8:
+        with cols[7]:
             domestic_requested_demand = st.slider(
                 label="Methanol Demand",
                 label_visibility="collapsed",
@@ -924,17 +931,17 @@ with t_welcome:
         "Detailed Demand Split Parameters for Fertilizers / Ammonia", expanded=False
     ):
 
-        col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(
+        cols = st.columns(
             8, vertical_alignment="top"
         )
-        col1.write("**Sector**")
-        col2.write("**Historic Fertilizer Demand (Mtpa)**")
-        col3.write("**Electrified Share (%)**")
-        col4.write("**Remaining Fertilizer Demand (Mtpa)**")
-        col5.write("**Domestic Grey Ammonia Supply (Mtpa)**")
-        col6.write("**Domestic Grey Ammonia Share (%)**")
-        col7.write("**Requested e-Ammonia Share (%)**")
-        col8.write("**Required e-Ammonia Production (Mtpa)**")
+        cols[0].write("**Sector**")
+        cols[1].write("**Historic Fertilizer Demand (Mtpa)**")
+        cols[2].write("**Electrified Share (%)**")
+        cols[3].write("**Remaining Fertilizer Demand (Mtpa)**")
+        cols[4].write("**Domestic Grey Ammonia Supply (Mtpa)**")
+        cols[5].write("**Domestic Grey Ammonia Share (%)**")
+        cols[6].write("**Requested e-Ammonia Share (%)**")
+        cols[7].write("**Required e-Ammonia Production (Mtpa)**")
 
         old_demand = {}
         new_demand_nh3 = {}
@@ -943,14 +950,14 @@ with t_welcome:
         total_remaining_demand = 0
         for s in fertilizeres:
             old_demand[s] = fertilizeres[s]["demand"] * fertilizeres[s]["ammonia_equiv"]
-            col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(
+            cols = st.columns(
                 8, vertical_alignment="top"
             )
-            col1.write(f"**{s}**")
-            col2.write(
+            cols[0].write(f"**{s}**")
+            cols[1].write(
                 f"{(fertilizeres[s]['demand']*fertilizeres[s]['ammonia_equiv']):.1f} "
             )
-            with col3:
+            with cols[2]:
                 new_share[s] = st.slider(
                     label=f"Electrification Share {s}",
                     label_visibility="collapsed",
@@ -963,22 +970,22 @@ with t_welcome:
                     key=f"draft_fertilizer_e_share_{s}",
                 )
 
-            with col4:
+            with cols[3]:
                 new_demand_nh3[s] = old_demand[s] * (1 - new_share[s] / 100)
                 st.write(f"{new_demand_nh3[s]:.1f}")
 
             total_demand += fertilizeres[s]["demand"] * fertilizeres[s]["ammonia_equiv"]
             total_remaining_demand += new_demand_nh3[s]
 
-        col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(
+        cols = st.columns(
             8, vertical_alignment="top"
         )
-        col1.write("**Total**")
-        col2.write(f"{total_demand:.1f}")
+        cols[0].write("**Total**")
+        cols[1].write(f"{total_demand:.1f}")
         total_electrification_share = (
             total_demand - total_remaining_demand
         ) / total_demand
-        col3.slider(
+        cols[2].slider(
             label=f"Electrification Share {s}",
             label_visibility="collapsed",
             min_value=0.0,
@@ -988,9 +995,9 @@ with t_welcome:
             format="%.1f%%",
             disabled=True,
         )
-        col4.write(f"{total_remaining_demand:.1f}")
+        cols[3].write(f"{total_remaining_demand:.1f}")
 
-        with col5:
+        with cols[4]:
             domestic_supply = st.slider(
                 label="Domestic Ammonia Supply",
                 label_visibility="collapsed",
@@ -1001,7 +1008,7 @@ with t_welcome:
                 format="%.1f Mtpa",
                 key="draft_domestic_ammonia_supply",
             )
-        with col6:
+        with cols[5]:
             domestic_supply_share = st.slider(
                 label="Domestic Ammonia Share",
                 label_visibility="collapsed",
@@ -1012,7 +1019,7 @@ with t_welcome:
                 format="%.1f%%",
                 disabled=True,
             )
-        with col7:
+        with cols[6]:
             domestic_requested_share = st.slider(
                 label="Requested Ammonia e-Share",
                 label_visibility="collapsed",
@@ -1023,7 +1030,7 @@ with t_welcome:
                 format="%.0f%%",
                 key="draft_requested_ammonia_e_share",
             )
-        with col8:
+        with cols[7]:
             domestic_requested_demand = st.slider(
                 label="e-Ammonia Demand",
                 label_visibility="collapsed",
@@ -1115,16 +1122,16 @@ with t_economic:
                     tech_data[d]["mc"],
                 )
 
-            col1, col2, col3, col4 = st.columns(4, vertical_alignment="top")
-            col2.write("**Discount Rate (%)**")
-            col3.write("**Overnight Investment Cost (AUD/MW)**")
-            col4.write("**Marginal Cost (AUD/MWh)**")
+            cols = st.columns(4, vertical_alignment="top")
+            cols[1].write("**Discount Rate (%)**")
+            cols[2].write("**Overnight Investment Cost (AUD/MW)**")
+            cols[3].write("**Marginal Cost (AUD/MWh)**")
 
             for d in tech_data:
-                col1, col2, col3, col4 = st.columns(4, vertical_alignment="top")
-                col1.write(f"**{tech_data[d]['label']}**")
+                cols = st.columns(4, vertical_alignment="top")
+                cols[0].write(f"**{tech_data[d]['label']}**")
 
-                with col2:
+                with cols[1]:
                     old_ui_dr[d] = round_multiple(old_dr[d], 0.1)
                     new_dr[d] = st.slider(
                         label=f"dr_{tech_data[d]['label']}",
@@ -1137,7 +1144,7 @@ with t_economic:
                         key=f"draft_dr_{d}",
                     )
 
-                with col3:
+                with cols[2]:
                     old_ui_cc[d] = investment_cost(old_cc[d], new_dr[d], old_lt[d])
                     new_cc[d] = st.slider(
                         label=f"cc_{tech_data[d]['label']}",
@@ -1150,7 +1157,7 @@ with t_economic:
                         key=f"draft_cc_{d}",
                     )
 
-                with col4:
+                with cols[3]:
                     old_ui_mc[d] = round_multiple(old_mc[d], 0.1)
                     new_mc[d] = st.slider(
                         label=f"mc_{tech_data[d]['label']}",
@@ -1300,18 +1307,18 @@ with t_demand:
             else:
                 new_cost = st.session_state.new_cost
 
-            col1, col2, col3, col4 = st.columns(4, vertical_alignment="top")
-            col2.write("**Current Demand**")
-            col3.write("**New / Proposed Demand**")
-            col4.write("**Avoided Import Price / Tonne**")
+            cols = st.columns(4, vertical_alignment="top")
+            cols[1].write("**Current Demand**")
+            cols[2].write("**New / Proposed Demand**")
+            cols[3].write("**Avoided Import Price / Tonne**")
 
             for l in load_data:
-                col1, col2, col3, col4 = st.columns(4, vertical_alignment="top")
+                cols = st.columns(4, vertical_alignment="top")
 
-                col1.write(f"**{load_data[l]['label']}**")
-                col2.write(f"{old_multiplier[l]:.1f} Mtpa")
+                cols[0].write(f"**{load_data[l]['label']}**")
+                cols[1].write(f"{old_multiplier[l]:.1f} Mtpa")
 
-                with col3:
+                with cols[2]:
                     new_multiplier[l] = st.slider(
                         label=f"Demand Multiplier {l}",
                         label_visibility="collapsed",
@@ -1323,7 +1330,7 @@ with t_demand:
                         key=f"draft_demand_{l}",
                     )
 
-                with col4:
+                with cols[3]:
                     new_cost[l] = st.slider(
                         label=f"Cost {l}",
                         label_visibility="collapsed",
@@ -1345,7 +1352,7 @@ with t_demand:
                         )
 
                         st.caption(
-                            f"Equivalent Diesel Replacement Value: "
+                            f"Equivalent Diesel Value: "
                             f"{diesel_equivalent:.2f} AUD/liter"
                         )
 
@@ -1389,34 +1396,34 @@ with t_optimization:
             st.write(scenario_summary)
 
         with st.expander("Configuration", expanded=False):
-            col1, col2, col3, col4 = st.columns(4)
+            cols = st.columns(4)
 
-            col1.metric("Country", "Australia")
-            col2.metric("Planning year", "2030")
-            col3.metric("Clusters", str(network_clusters))
-            col4.metric("Resolution", "3h")
+            cols[0].metric("Country", "Australia")
+            cols[1].metric("Planning year", "2030")
+            cols[2].metric("Clusters", str(network_clusters))
+            cols[3].metric("Resolution", "3h")
 
-            col1, col2, col3, col4 = st.columns(4)
+            cols = st.columns(4)
 
             cost_setup = (
                 "Custom" if st.session_state.get("costs_modified") else "Reference"
             )
-            col1.metric("Cost setup", cost_setup)
-            col2.metric("H2 demand", f"{demand['custom_h2']:.1f} Mtpa")
-            col3.metric("Grey ammonia", f"{demand['grey_ammonia']:.1f} Mtpa")
-            col4.metric("e-ammonia", f"{demand['e_ammonia']:.1f} Mtpa")
+            cols[0].metric("Cost setup", cost_setup)
+            cols[1].metric("H2 demand", f"{demand['custom_h2']:.1f} Mtpa")
+            cols[2].metric("Grey ammonia", f"{demand['grey_ammonia']:.1f} Mtpa")
+            cols[3].metric("e-ammonia", f"{demand['e_ammonia']:.1f} Mtpa")
 
-            col1, col2, col3, col4 = st.columns(4)
+            cols = st.columns(4)
 
-            col1.metric("Grey methanol", f"{demand['grey_methanol']:.1f} Mtpa")
-            col2.metric("e-methanol", f"{demand['e_methanol']:.1f} Mtpa")
-            col3.metric("Total ammonia", f"{ammonia:.1f} Mtpa")
-            col4.metric("Total methanol", f"{methanol:.1f} Mtpa")
+            cols[0].metric("Grey methanol", f"{demand['grey_methanol']:.1f} Mtpa")
+            cols[1].metric("e-methanol", f"{demand['e_methanol']:.1f} Mtpa")
+            cols[2].metric("Total ammonia", f"{ammonia:.1f} Mtpa")
+            cols[3].metric("Total methanol", f"{methanol:.1f} Mtpa")
 
         with st.expander("Snapshot Options", expanded=True):
-            col1, col2, col3 = st.columns(3, vertical_alignment="top")
+            cols = st.columns(3, vertical_alignment="top")
 
-            with col1:
+            with cols[0]:
                 run_mode = st.radio(
                     "Desired optimization snapshots",
                     ["Full Year", "Full Month", "Week per Month"],
@@ -1425,7 +1432,7 @@ with t_optimization:
                 )
 
             if run_mode != "Full Year":
-                with col2:
+                with cols[1]:
                     months = st.multiselect(
                         "Month(s) to consider",
                         [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
@@ -1434,7 +1441,7 @@ with t_optimization:
             else:
                 months = list(range(1, 13))
 
-            with col3:
+            with cols[2]:
                 if run_mode == "Week per Month":
                     weeks = st.radio(
                         "Week no within selected months",
@@ -1446,21 +1453,25 @@ with t_optimization:
                     weeks = None
 
         with st.expander("Solver Options", expanded=False):
-            use_highs = run_mode == "Week per Month" and len(months) == 1
+            cols = st.columns(3, vertical_alignment="bottom")
 
-            solver_default_index = 0 if use_highs else 1
+            with cols[0]:
+                use_highs = run_mode == "Week per Month" and len(months) == 1
 
-            solver_name = st.radio(
-                "Solver to use for optimization",
-                ["highs", "OETC"],
-                index=solver_default_index,
-                horizontal=True,
-            )
+                solver_default_index = 0 if use_highs else 1
 
-            if use_highs:
-                st.caption("Default: HiGHS for a single selected week.")
-            else:
-                st.caption("Default: OETC for larger optimization scopes.")
+                solver_name = st.radio(
+                    "Solver to use for optimization",
+                    ["highs", "OETC"],
+                    index=solver_default_index,
+                    horizontal=True,
+                )
+
+            with cols[1]:
+                if use_highs:
+                    st.caption("Default: HiGHS for a single selected week.")
+                else:
+                    st.caption("Default: OETC for larger optimization scopes.")
 
         if new_cost is not None and new_multiplier is not None:
 
@@ -1877,7 +1888,9 @@ with t_results:
                                         title="Technology",
                                         scale=alt.Scale(
                                             domain=shown_techs,
-                                            range=[DISPATCH_COLORS[t] for t in shown_techs],
+                                            range=[
+                                                DISPATCH_COLORS[t] for t in shown_techs
+                                            ],
                                         ),
                                     ),
                                     tooltip=[
@@ -1924,7 +1937,9 @@ with t_results:
                                         )
                                         continue
 
-                                    n_map = st.session_state.solved_networks[capacity_run]
+                                    n_map = st.session_state.solved_networks[
+                                        capacity_run
+                                    ]
 
                                     map_network = None
 
@@ -1997,7 +2012,9 @@ with t_results:
                         ]
 
                         APP_DIR = Path(__file__).resolve().parent
-                        shape_path = APP_DIR / "data" / "shapes" / "australia_states.geojson"
+                        shape_path = (
+                            APP_DIR / "data" / "shapes" / "australia_states.geojson"
+                        )
 
                         states = None
                         selected_state = None
@@ -2005,10 +2022,14 @@ with t_results:
                         if dispatch_scope == "By state":
                             try:
                                 states = gpd.read_file(shape_path)
-                                state_dispatch_all = compute_dispatch_by_carrier_and_state(
-                                    st.session_state.solved_networks[selected_runs[0]],
-                                    dispatch_category,
-                                    states,
+                                state_dispatch_all = (
+                                    compute_dispatch_by_carrier_and_state(
+                                        st.session_state.solved_networks[
+                                            selected_runs[0]
+                                        ],
+                                        dispatch_category,
+                                        states,
+                                    )
                                 )
 
                                 available_states = sorted(
@@ -2056,7 +2077,9 @@ with t_results:
                                         .set_index("snapshot")
                                     )
 
-                                    dispatch_df.index = pd.to_datetime(dispatch_df.index)
+                                    dispatch_df.index = pd.to_datetime(
+                                        dispatch_df.index
+                                    )
 
                             n_snapshots = len(dispatch_df)
 
@@ -2074,12 +2097,16 @@ with t_results:
                                 key=f"dispatch_resample_{dispatch_label}_{dispatch_category}_{dispatch_scope}_{selected_state}",
                             )
 
-                            y_label = "GW" if dispatch_category == "Electricity" else "kt"
+                            y_label = (
+                                "GW" if dispatch_category == "Electricity" else "kt"
+                            )
 
                             if dispatch_scope == "National":
                                 st.markdown(f"### Scenario {dispatch_label}")
                             else:
-                                st.markdown(f"### Scenario {dispatch_label} - {selected_state}")
+                                st.markdown(
+                                    f"### Scenario {dispatch_label} - {selected_state}"
+                                )
 
                             if dispatch_df.empty:
                                 st.warning(
@@ -2134,7 +2161,9 @@ with t_results:
                                         title="Technology",
                                         scale=alt.Scale(
                                             domain=shown_techs,
-                                            range=[DISPATCH_COLORS[t] for t in shown_techs],
+                                            range=[
+                                                DISPATCH_COLORS[t] for t in shown_techs
+                                            ],
                                         ),
                                     ),
                                     tooltip=[
@@ -2161,7 +2190,7 @@ with t_results:
                             )
 
                             with st.expander(
-                                f"Show {dispatch_category} annual totals for scenario {dispatch_label}",
+                                f"Show {dispatch_category} annual total production for scenario {dispatch_label}",
                                 expanded=False,
                             ):
                                 st.dataframe(
@@ -2186,7 +2215,9 @@ with t_results:
 
                         APP_DIR = Path(__file__).resolve().parent
 
-                        shape_path = APP_DIR / "data" / "shapes" / "australia_states.geojson"
+                        shape_path = (
+                            APP_DIR / "data" / "shapes" / "australia_states.geojson"
+                        )
 
                         try:
                             states = gpd.read_file(shape_path)
@@ -2203,10 +2234,10 @@ with t_results:
                                     weight_col = "dispatch_twh"
                                     output_col = "state_weighted_lcoe"
                                     cbar_label = "Generation-weighted LCOE (AUD/MWh)"
-                                    empty_msg = f"No LCOE data found for scenario {cost_label}."
-                                    table_title = (
-                                        f"Show state-level LCOE table for scenario {cost_label}"
+                                    empty_msg = (
+                                        f"No LCOE data found for scenario {cost_label}."
                                     )
+                                    table_title = f"Show state-level LCOE table for scenario {cost_label}"
                                     rename_cols = {
                                         "STATE_NAME": "State",
                                         output_col: "Generation-weighted LCOE (AUD/MWh)",
@@ -2220,9 +2251,7 @@ with t_results:
                                     output_col = "state_weighted_lcoh_aud_per_kg"
                                     cbar_label = "Production-weighted LCOH (AUD/kg H2)"
                                     empty_msg = f"No grid H2 production found for scenario {cost_label}."
-                                    table_title = (
-                                        f"Show state-level LCOH table for scenario {cost_label}"
-                                    )
+                                    table_title = f"Show state-level LCOH table for scenario {cost_label}"
                                     rename_cols = {
                                         "STATE_NAME": "State",
                                         output_col: "Production-weighted LCOH (AUD/kg H2)",
@@ -2233,8 +2262,12 @@ with t_results:
                                     cost_df, _ = compute_lco_ammonia_by_bus(n_cost)
                                     cost_col = "weighted_lco_ammonia_aud_per_tonne"
                                     weight_col = "production_kt"
-                                    output_col = "state_weighted_lco_ammonia_aud_per_tonne"
-                                    cbar_label = "Production-weighted LCO ammonia (AUD/t NH3)"
+                                    output_col = (
+                                        "state_weighted_lco_ammonia_aud_per_tonne"
+                                    )
+                                    cbar_label = (
+                                        "Production-weighted LCO ammonia (AUD/t NH3)"
+                                    )
                                     empty_msg = f"No e-ammonia production found for scenario {cost_label}."
                                     table_title = f"Show state-level e-ammonia cost table for scenario {cost_label}"
                                     rename_cols = {
@@ -2247,8 +2280,12 @@ with t_results:
                                     cost_df, _ = compute_lco_methanol_by_bus(n_cost)
                                     cost_col = "weighted_lco_methanol_aud_per_tonne"
                                     weight_col = "production_kt"
-                                    output_col = "state_weighted_lco_methanol_aud_per_tonne"
-                                    cbar_label = "Production-weighted LCOMeOH (AUD/t MeOH)"
+                                    output_col = (
+                                        "state_weighted_lco_methanol_aud_per_tonne"
+                                    )
+                                    cbar_label = (
+                                        "Production-weighted LCOMeOH (AUD/t MeOH)"
+                                    )
                                     empty_msg = f"No e-methanol production found for scenario {cost_label}."
                                     table_title = f"Show state-level e-methanol cost table for scenario {cost_label}"
                                     rename_cols = {
@@ -2258,7 +2295,9 @@ with t_results:
                                     }
 
                                 if cost_df.empty:
-                                    state_maps.append((cost_label, None, empty_msg, None, None))
+                                    state_maps.append(
+                                        (cost_label, None, empty_msg, None, None)
+                                    )
                                     continue
 
                                 state_costs = aggregate_node_costs_by_state(
@@ -2375,7 +2414,9 @@ with t_results:
                             .index
                         )
 
-                        categories = [c for c in renamed_tech_colors if c in active_categories]
+                        categories = [
+                            c for c in renamed_tech_colors if c in active_categories
+                        ]
 
                         df_plot = df_plot[df_plot["tech_label"].isin(categories)]
 
@@ -2398,7 +2439,9 @@ with t_results:
                                     title="Technology",
                                     scale=alt.Scale(
                                         domain=categories,
-                                        range=[renamed_tech_colors[c] for c in categories],
+                                        range=[
+                                            renamed_tech_colors[c] for c in categories
+                                        ],
                                     ),
                                 ),
                                 tooltip=[
@@ -2500,16 +2543,24 @@ with t_results:
 
                 if result_view == "Economic comparison":
                     if st.session_state.results is None:
-                        st.info("Run an optimization first to show the economic comparison.")
+                        st.info(
+                            "Run an optimization first to show the economic comparison."
+                        )
                         st.stop()
 
                     df = st.session_state.results
                     df = df.rename(columns=label_map)
                     df = df / 1e3
 
-                    df = df[df.index.get_level_values(0).str.contains("Economics")].round(1)
+                    df = df[
+                        df.index.get_level_values(0).str.contains("Economics")
+                    ].round(1)
 
-                    df = df.reset_index().drop(columns=["component"]).set_index("carrier")
+                    df = (
+                        df.reset_index()
+                        .drop(columns=["component"])
+                        .set_index("carrier")
+                    )
 
                     st.bar_chart(
                         df.T,
@@ -2539,268 +2590,109 @@ with t_results:
 # TAB IMPORT SHOCK INSURANCE
 with t_insurance:
     st.header("Import Shock Insurance")
-    st.info("""
-    This analysis uses precomputed optimization results downloaded from Zenodo.
 
-    It is completely independent from any optimization runs performed in this application and does not use the Economic Parameters, Demand Parameters or Optimization settings configured in this session.
+    static_dir = Path(__file__).resolve().parent / "static" / "import_shock"
 
-    The analysis is based on a fixed set of precomputed **20-node PyPSA-AUS scenarios**, ranging from 0% to 100% local e-fuel production.
-    """)
-    st.markdown(f"""
-        Scenarios included:
-        - 0% local e-fuel production
-        - 20% local e-fuel production
-        - 40% local e-fuel production
-        - 60% local e-fuel production
-        - 80% local e-fuel production
-        - 100% local e-fuel production
-        """)
+    scenario_overview_path = static_dir / "scenario_overview.csv"
+    insurance_assumptions_path = static_dir / "insurance_assumptions.csv"
+    diesel_figure_path = static_dir / "diesel_insurance.png"
+    ammonia_figure_path = static_dir / "ammonia_insurance.png"
 
-    nodes = 20
-
-    st.markdown(f"""
-        Precomputed insurance scenarios for **{nodes} nodes** are downloaded from
-        [Zenodo]({INSURANCE_SCENARIO_URL}).
-    """)
-
-    try:
-        with st.spinner("Downloading precomputed insurance scenarios (depending on your internet speed this might take some minutes)..."):
-            insurance_networks = load_precomputed_insurance_scenarios(nodes)
-
-    except Exception as exc:
-        st.error(f"Could not load precomputed insurance scenarios: {exc}")
-        st.stop()
-
-    scenario_display_labels = {
-        key: f"{key.replace('greenlocprod', '')}%" for key in insurance_networks
-    }
-
-    baseline_label = "greenlocprod0"
-
-    st.info(
-        "All scenarios are compared against the 0% local e-fuel production reference case."
-    )
-
-    diesel_shocks_l = [0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
-    ammonia_shocks = [
-        0,
-        300,
-        600,
-        900,
-        1200,
-        1500,
-        1800,
-        2100,
-        2400,
-        2700,
-        3000,
+    required_files = [
+        scenario_overview_path,
+        insurance_assumptions_path,
+        diesel_figure_path,
+        ammonia_figure_path,
     ]
 
-    baseline_network = insurance_networks[baseline_label]
-    baseline_cost = baseline_network.objective / 1e6
-    baseline_meoh = get_network_demand_mtpa(baseline_network, "e_methanol")
-    baseline_nh3 = get_network_demand_mtpa(baseline_network, "e_ammonia")
+    missing_files = [path for path in required_files if not path.exists()]
 
-    diesel_rows = []
-    ammonia_rows = []
-    scenario_detail_rows = []
-
-    for scenario_label, scenario_network in insurance_networks.items():
-        scenario_cost = scenario_network.objective / 1e6
-
-        e_meoh = get_network_demand_mtpa(scenario_network, "e_methanol")
-        e_nh3 = get_network_demand_mtpa(scenario_network, "e_ammonia")
-
-        additional_system_cost = scenario_cost - baseline_cost
-        additional_green_fuel = max(e_meoh - baseline_meoh, 0.0)
-        additional_diesel_equivalent = (
-            additional_green_fuel
-            * MWH_PER_TONNE["e_methanol"]
-            / MWH_PER_TONNE["diesel"]
+    if missing_files:
+        st.error(
+            "Static import shock insurance files are missing:\n\n"
+            + "\n".join(f"- {path}" for path in missing_files)
         )
-        additional_nh3 = max(e_nh3 - baseline_nh3, 0.0)
+        st.stop()
 
-        scenario_detail_rows.append(
-            {
-                "Scenario": scenario_display_labels[scenario_label],
-                "System cost (MAUD/year)": scenario_cost,
-                "Additional system cost relative to baseline (MAUD/year)": additional_system_cost,
-                "e-methanol production for diesel replacement (Mtpa)": e_meoh,
-                "e-ammonia production (Mtpa)": e_nh3,
-                "Additional e-methanol relative to baseline (Mtpa)": additional_green_fuel,
-                "Additional diesel-equivalent fuel displacement relative to baseline (Mtpa)": additional_diesel_equivalent,
-                "Additional e-ammonia relative to baseline (Mtpa)": additional_nh3,
-            }
-        )
+    st.info("""
+    This analysis presents precomputed import shock insurance results derived from
+    fixed 20-node PyPSA-AUS optimisation scenarios.
 
-        for diesel_shock_l in diesel_shocks_l:
-            diesel_shock = diesel_shock_l * 1000 / KG_PER_LITER_DIESEL
+    The results are static and independent from any optimisation runs performed in
+    this application. They do not use the Economic Parameters, Demand Parameters,
+    or Optimisation settings configured in this session.
+    """)
 
-            value_of_displaced_import_exposure = (
-                additional_diesel_equivalent * 1e6 * diesel_shock
-            ) / 1e6
+    scenario_overview_df = pd.read_csv(scenario_overview_path)
+    insurance_assumptions_df = pd.read_csv(insurance_assumptions_path)
 
-            net_insurance_benefit = (
-                value_of_displaced_import_exposure - additional_system_cost
-            )
-
-            diesel_rows.append(
-                {
-                    "Scenario": scenario_display_labels[scenario_label],
-                    "Assumed diesel import price increase (AUD/liter)": diesel_shock_l,
-                    "System cost (MAUD/year)": scenario_cost,
-                    "Additional system cost relative to baseline (MAUD/year)": additional_system_cost,
-                    "Value of displaced import exposure (MAUD/year)": value_of_displaced_import_exposure,
-                    "Net insurance benefit (MAUD/year)": net_insurance_benefit,
-                }
-            )
-
-        for ammonia_shock in ammonia_shocks:
-            value_of_displaced_import_exposure = (
-                additional_nh3 * 1e6 * ammonia_shock
-            ) / 1e6
-
-            net_insurance_benefit = (
-                value_of_displaced_import_exposure - additional_system_cost
-            )
-
-            ammonia_rows.append(
-                {
-                    "Scenario": scenario_display_labels[scenario_label],
-                    "Assumed ammonia import price increase (AUD/t NH3)": ammonia_shock,
-                    "System cost (MAUD/year)": scenario_cost,
-                    "Additional system cost relative to baseline (MAUD/year)": additional_system_cost,
-                    "Value of displaced import exposure (MAUD/year)": value_of_displaced_import_exposure,
-                    "Net insurance benefit (MAUD/year)": net_insurance_benefit,
-                }
-            )
-
-    diesel_df = pd.DataFrame(diesel_rows)
-    ammonia_df = pd.DataFrame(ammonia_rows)
-    scenario_detail_df = pd.DataFrame(scenario_detail_rows)
-
-    def make_insurance_chart(df, x_col, x_title):
-        return (
-            alt.Chart(df)
-            .mark_line(point=True, strokeWidth=3, size=80)
-            .encode(
-                x=alt.X(
-                    f"{x_col}:Q",
-                    title=x_title,
-                    axis=alt.Axis(labelFontSize=18, titleFontSize=20),
-                ),
-                y=alt.Y(
-                    "Net insurance benefit (MAUD/year):Q",
-                    title="Net insurance benefit (MAUD/year)",
-                    axis=alt.Axis(labelFontSize=18, titleFontSize=20),
-                ),
-                color=alt.Color(
-                    "Scenario:N",
-                    title="Local e-fuel production share",
-                    scale=alt.Scale(
-                        domain=["0%", "20%", "40%", "60%", "80%", "100%"],
-                    ),
-                    legend=alt.Legend(
-                        orient="bottom",
-                        direction="horizontal",
-                        columns=6,
-                        labelFontSize=18,
-                        titleFontSize=20,
-                        labelLimit=0,
-                        titleLimit=0,
-                    ),
-                ),
-                tooltip=[
-                    "Scenario:N",
-                    alt.Tooltip(f"{x_col}:Q", format=",.2f"),
-                    alt.Tooltip("System cost (MAUD/year):Q", format=",.2f"),
-                    alt.Tooltip(
-                        "Additional system cost relative to baseline (MAUD/year):Q",
-                        format=",.2f",
-                    ),
-                    alt.Tooltip(
-                        "Value of displaced import exposure (MAUD/year):Q",
-                        format=",.2f",
-                    ),
-                    alt.Tooltip(
-                        "Net insurance benefit (MAUD/year):Q",
-                        format=",.2f",
-                    ),
-                ],
-            )
-            .properties(height=650)
-        )
+    st.markdown("**Scenarios included**")
+    st.dataframe(
+        scenario_overview_df,
+        hide_index=True,
+        width="stretch",
+    )
 
     st.subheader("Diesel import shock insurance")
-    st.altair_chart(
-        make_insurance_chart(
-            diesel_df,
-            "Assumed diesel import price increase (AUD/liter)",
-            "Assumed diesel import price increase (AUD/liter)",
-        ),
+    st.image(
+        diesel_figure_path,
         width="stretch",
     )
 
     st.subheader("Ammonia import shock insurance")
-    st.altair_chart(
-        make_insurance_chart(
-            ammonia_df,
-            "Assumed ammonia import price increase (AUD/t NH3)",
-            "Assumed ammonia import price increase (AUD/t NH3)",
-        ),
+    st.image(
+        ammonia_figure_path,
         width="stretch",
     )
 
     st.info("""
-        **How to interpret these charts**
+    **How to interpret these charts**
 
-        The charts estimate the **insurance value of domestic e-fuel production** against import price shocks.
+    The charts estimate the **insurance value of domestic e-fuel production**
+    against import prices above the baseline import price.
 
-        * Each line represents a different level of **local e-fuel production** (0–100%). The same share is applied to both **e-methanol** production for diesel replacement and **e-ammonia** production for fertilizer demand.
-        * The first chart shows the insurance value against **imported diesel price shocks**.
-        * The second chart shows the insurance value against **imported ammonia price shocks**.
-        * The **y-axis** shows the **net insurance benefit** (MAUD/year), calculated as the estimated value of reduced import exposure minus the additional annual system cost relative to the **0% local e-fuel production reference case**.
+    * Each line represents a different level of **local e-fuel production** (0-100%).
+      The same share is applied to both **e-methanol** production for diesel
+      replacement and **e-ammonia** production for fertilizer demand.
+    * The first chart shows the insurance value at different **diesel import prices**.
+    * The second chart shows the insurance value at different **ammonia import prices**.
+    * The **y-axis** shows the **net insurance benefit** (MAUD/year), calculated as
+      the avoided cost of importing the displaced fuel volume at the assumed import
+      price minus the additional annual system cost relative to the 0% local e-fuel
+      production reference case.
 
-        At **zero import price shock**, the net insurance benefit is negative and equal to the additional annual system cost associated with domestic e-fuel production. As import prices increase, the value of reducing import exposure increases and the net insurance benefit improves.
+    The avoided import expenditure is calculated by multiplying the additional
+    volume of domestic e-fuel production relative to the 0% scenario by the
+    difference between the assumed import price and the baseline import price.
 
-        The additional annual system cost is calculated as the difference in **PyPSA-AUS objective value** between each scenario and the **0% local e-fuel production reference case**.
+    The baseline import prices are **1.77 AUD/liter for diesel** and
+    **700 AUD/t NH3 for ammonia**. The value of reduced import exposure is calculated
+    only for the price difference above these baselines.
 
-        The point where a line crosses **0 MAUD/year** indicates the import price increase at which that level of local e-fuel production breaks even from an insurance perspective.
+    At **zero import price shock**, the net insurance benefit is negative and equal
+    to the additional annual system cost associated with domestic e-fuel production.
+    As import prices increase, the value of reducing import exposure increases and
+    the net insurance benefit improves.
 
-        This analysis does not explicitly model imports. Instead, it estimates the value of reducing exposure to future import price increases using pre-computed PyPSA-AUS scenarios.
+    The additional annual system cost is calculated as the difference in
+    **PyPSA-AUS objective value** between each scenario and the **0% local e-fuel
+    production reference case**.
 
-        """)
+    The point where a line crosses **0 MAUD/year** indicates the import price at
+    which that level of local e-fuel production breaks even from an insurance
+    perspective.
 
-    scenario_detail_df = scenario_detail_df[
-        [
-            "Scenario",
-            "Additional system cost relative to baseline (MAUD/year)",
-            "Additional diesel-equivalent fuel displacement relative to baseline (Mtpa)",
-            "Additional e-ammonia relative to baseline (Mtpa)",
-        ]
-    ]
-
-    scenario_detail_df = scenario_detail_df.rename(
-        columns={
-            "Scenario": "Local e-fuel production share",
-            "Additional system cost relative to baseline (MAUD/year)": (
-                "Annual insurance cost (MAUD/year)"
-            ),
-            "Additional diesel-equivalent fuel displacement relative to baseline (Mtpa)": (
-                "Reduced diesel import exposure (Mtpa diesel-eq.)"
-            ),
-            "Additional e-ammonia relative to baseline (Mtpa)": (
-                "Reduced ammonia import exposure (Mtpa NH3)"
-            ),
-        }
-    )
+    This analysis does not explicitly model imports. Instead, it estimates the value
+    of reducing exposure to future import price increases using precomputed
+    PyPSA-AUS scenarios.
+    """)
 
     with st.expander(
         "Show underlying assumptions for each production scenario",
         expanded=False,
     ):
         st.dataframe(
-            scenario_detail_df.round(2),
+            insurance_assumptions_df,
             hide_index=True,
             width="stretch",
         )
