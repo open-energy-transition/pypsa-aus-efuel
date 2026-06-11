@@ -66,6 +66,7 @@ openjdk = "17.*"
 streamlit = ">=1.57.0,<2"
 linopy = ">=0.5.7"
 highs = ">=1.14.0,<2"
+numpoly = ">=1.2.12,<2"
 
 [pypi-dependencies]
 currencyconverter = "*"
