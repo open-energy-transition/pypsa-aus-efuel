@@ -4,8 +4,8 @@ SPDX-FileCopyrightText:  PyPSA-Earth and PyPSA-Eur Authors
 SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
-# PyPSA-AUS-efuels
-Repository for the PyPSA-AUS-efuels project
+# PyPSA-AUS-efuel
+Repository for the PyPSA-AUS-efuel project
 
 <img src="https://raw.githubusercontent.com/open-energy-transition/oet-website/main/assets/img/oet-logo-red-n-subtitle.png" alt="Open Energy Transition Logo" width="260" height="100" align="right">
 
