@@ -1,6 +1,6 @@
 streamlit
 matplotlib
-numpy==1.26.4
+numpy==2.5.1
 pandas==2.3.3
 xarray==2026.4.0
 pypsa==1.2.2
