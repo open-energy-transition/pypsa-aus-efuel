@@ -3,7 +3,7 @@ matplotlib
 numpy==1.26.4
 pandas==2.3.3
 xarray==2026.4.0
-pypsa==1.2.2
+pypsa==1.2.4
 linopy[oetc]==0.7.0
 highspy
 scipy
